@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { getConfig } from "../../src/config.js";
-import { verifyWebhookSignature } from "../../src/integrations/gohighlevel.js";
+import { verifyWebhookAuth } from "../../src/integrations/gohighlevel.js";
 import { HousecallProClient } from "../../src/integrations/housecallPro.js";
 import { parseAvailabilityRequest } from "../../src/lib/requestParsing.js";
 import { sendError, sendJson } from "../../src/lib/response.js";
@@ -19,13 +19,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   await storage.cleanupIdempotency();
   const rawBody = JSON.stringify(req.body ?? {});
   const providedSignature = req.headers["x-nora-signature"];
+  const providedSecret = req.headers["x-nora-secret"];
 
   if (
-    !verifyWebhookSignature(
+    !verifyWebhookAuth({
       rawBody,
-      Array.isArray(providedSignature) ? providedSignature[0] : providedSignature,
-      config.ghl.webhookSecret,
-    )
+      providedSignature: Array.isArray(providedSignature) ? providedSignature[0] : providedSignature,
+      providedSecret: Array.isArray(providedSecret) ? providedSecret[0] : providedSecret,
+      secret: config.ghl.webhookSecret,
+    })
   ) {
     sendJson(res, 401, { success: false, message: "Invalid webhook signature." });
     return;

@@ -159,6 +159,23 @@ npm run deploy:check
    - `/api/webhooks/booking`
 7. Send a test availability webhook first before enabling live booking traffic.
 
+## GoHighLevel webhook auth
+
+The API accepts either of these auth methods:
+
+- `x-nora-signature`
+  - HMAC SHA-256 of the raw JSON request body using `GHL_WEBHOOK_SECRET`
+- `x-nora-secret`
+  - direct shared-secret header whose value matches `GHL_WEBHOOK_SECRET`
+
+For GoHighLevel, the easiest setup is usually a custom header:
+
+```text
+x-nora-secret: your-ghl-webhook-secret
+```
+
+That avoids needing to generate an HMAC signature inside the workflow builder.
+
 ## Example availability payload
 
 ```json
