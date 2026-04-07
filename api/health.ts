@@ -31,6 +31,10 @@ export default async function handler(_req: VercelRequest, res: VercelResponse):
     success: true,
     service: "nora-dispatcher-middleware",
     timestamp: new Date().toISOString(),
+    integrations: {
+      hcpConfigured: Boolean(config.hcp.token),
+      ghlSecretConfigured: Boolean(config.ghl.webhookSecret),
+    },
     storage: {
       mode: storageMode,
       schemaReady,

@@ -61,6 +61,28 @@ describe("slot building", () => {
     expect(slots[0]?.bookingTarget).toBe("job");
   });
 
+  it("rounds same-day slot starts to clean half-hour windows", () => {
+    const request: CustomerRequest = {
+      firstName: "Nate",
+      phone: "555-111-2222",
+      zipCode: "48038",
+      requestedService: "Install recessed lights in living room",
+    };
+
+    const service = classifyService(request.requestedService);
+    const slots = buildCandidateSlots(
+      request,
+      service,
+      [],
+      settings,
+      new Date("2026-04-04T13:18:21.630Z"),
+    );
+
+    expect(slots.length).toBeGreaterThan(0);
+    expect(new Date(slots[0]!.start).getUTCMinutes()).toBe(30);
+    expect(new Date(slots[0]!.start).getUTCSeconds()).toBe(0);
+  });
+
   it("filters out unsupported counties", () => {
     const request: CustomerRequest = {
       firstName: "Nate",

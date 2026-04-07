@@ -117,7 +117,7 @@ function maybePushSlot(
   now: Date;
 }): void {
   const sameDayBaseline = now;
-  const candidateStart = new Date(windowStart);
+  const candidateStart = roundUpToSlotWindow(windowStart);
   const requestZip = normalizeZip(request.zipCode);
   const driveBefore = previousJob
     ? estimateDriveMinutes(previousJob.zipCode, requestZip)
@@ -207,6 +207,21 @@ function endOfBusinessDay(now: Date, dayOffset: number, closingHour: number): Da
 
 function startingDriveMinutes(zipCode: string): number {
   return detectCounty(zipCode) === "macomb" ? 20 : 25;
+}
+
+function roundUpToSlotWindow(date: Date, incrementMinutes = 30): Date {
+  const rounded = new Date(date);
+  rounded.setUTCSeconds(0, 0);
+
+  const minutes = rounded.getUTCMinutes();
+  const remainder = minutes % incrementMinutes;
+
+  if (remainder === 0) {
+    return rounded;
+  }
+
+  rounded.setUTCMinutes(minutes + (incrementMinutes - remainder), 0, 0);
+  return rounded;
 }
 
 function technicianMatchesService(
