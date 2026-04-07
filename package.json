@@ -7,7 +7,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "dev": "vercel dev",
