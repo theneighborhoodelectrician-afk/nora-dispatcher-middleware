@@ -1,0 +1,17 @@
+{
+  "webhookId": "sample-booking-001",
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "phone": "586-555-0100",
+  "email": "jane@example.com",
+  "address": "123 Main St, Sterling Heights, MI",
+  "zipCode": "48313",
+  "requestedService": "Install recessed lights in living room",
+  "notes": "Customer prefers afternoons",
+  "selectedSlot": {
+    "technician": "Dave",
+    "start": "2026-04-07T17:00:00.000Z",
+    "end": "2026-04-07T21:00:00.000Z",
+    "bookingTarget": "job"
+  }
+}

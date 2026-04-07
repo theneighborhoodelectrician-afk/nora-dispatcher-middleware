@@ -1,0 +1,35 @@
+{
+  "name": "nora-dispatcher-middleware",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "vercel dev",
+    "db:init": "node --import tsx scripts/init-db.ts",
+    "deploy:check": "node --import tsx scripts/deploy-check.ts",
+    "replay": "node --import tsx scripts/replay-fixture.ts",
+    "hcp:export": "node --import tsx scripts/export-hcp.ts",
+    "hcp:probe": "node --import tsx scripts/probe-hcp.ts",
+    "hcp:live-booking-test": "node --import tsx scripts/live-booking-test.ts",
+    "hcp:probe-customers": "node --import tsx scripts/probe-hcp-customers.ts"
+  },
+  "dependencies": {
+    "@vercel/node": "^5.3.24",
+    "dotenv": "^16.6.1",
+    "pg": "^8.16.3",
+    "tsx": "^4.20.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@types/pg": "^8.15.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,274 @@
+[
+  {
+    "id": "job_c66d8ca2e3c943118c09a8485fd11439",
+    "technician": "Nate",
+    "start": "2026-04-08T16:00:00Z",
+    "end": "2026-04-08T17:00:00Z",
+    "zipCode": "48051",
+    "title": ""
+  },
+  {
+    "id": "job_ff7b40bd943c48058e45afabda0ee1b7",
+    "technician": "Lou",
+    "start": "2026-04-09T18:30:00Z",
+    "end": "2026-04-09T21:00:00Z",
+    "zipCode": "48317",
+    "title": ""
+  },
+  {
+    "id": "job_273612e7602e443d93f1cf9a4943f8d3",
+    "technician": "Lou",
+    "start": "2026-04-09T16:15:00Z",
+    "end": "2026-04-09T18:00:00Z",
+    "zipCode": "48220",
+    "title": ""
+  },
+  {
+    "id": "job_60187520e10941cd8c997ce4d85cdac5",
+    "technician": "Nate",
+    "start": "2026-04-06T21:00:00Z",
+    "end": "2026-04-06T22:00:00Z",
+    "zipCode": "48038",
+    "title": "Diagnose Issue and Repair Same Day - Discounted Service Call"
+  },
+  {
+    "id": "job_5ff50f4b9194442782c9438bfd4d8953",
+    "technician": "Nate",
+    "start": "2026-04-06T20:00:00Z",
+    "end": "2026-04-06T20:30:00Z",
+    "zipCode": "48089",
+    "title": "Project Consultation (Free Estimate) For Larger Jobs That Require a Walkthrough"
+  },
+  {
+    "id": "job_7627b942293c4003835afb36577b23aa",
+    "technician": "Lou",
+    "start": "2026-04-08T16:00:00Z",
+    "end": "2026-04-08T18:00:00Z",
+    "zipCode": "48326",
+    "title": "Discounted $229 Diagnostic, Quote & Do Same Day"
+  },
+  {
+    "id": "job_0ed6eaed8fe8472a8e6b653928cff7a0",
+    "technician": "Nate",
+    "start": "2026-04-07T15:30:00Z",
+    "end": "2026-04-07T16:30:00Z",
+    "zipCode": "48044",
+    "title": ""
+  },
+  {
+    "id": "job_2a9f9b78f0e24e1e9a022b80e0b67e5b",
+    "technician": "Nate",
+    "start": "2026-04-07T13:30:00Z",
+    "end": "2026-04-07T14:30:00Z",
+    "zipCode": "48324",
+    "title": ""
+  },
+  {
+    "id": "job_e51a2c439a7c4732846de588f551d310",
+    "technician": "Steve",
+    "start": "2026-04-08T17:00:00Z",
+    "end": "2026-04-08T20:00:00Z",
+    "zipCode": "48073",
+    "title": ""
+  },
+  {
+    "id": "job_fce769128aa94732973322a163bac432",
+    "technician": "Nate",
+    "start": "2026-04-06T16:00:00Z",
+    "end": "2026-04-06T17:00:00Z",
+    "zipCode": "48316",
+    "title": "Discounted Service Call"
+  },
+  {
+    "id": "job_33175b5585534e2f90583dd0a67928e8",
+    "technician": "Brandon",
+    "start": "2026-04-06T13:00:00Z",
+    "end": "2026-04-06T21:00:00Z",
+    "zipCode": "48065",
+    "title": "100 amp service (Panel Only)"
+  },
+  {
+    "id": "job_14dd4fc9f8004c96b62ebb28f26f7e92",
+    "technician": "Lou",
+    "start": "2026-04-09T16:00:00Z",
+    "end": "2026-04-09T19:00:00Z",
+    "zipCode": "48076",
+    "title": ""
+  },
+  {
+    "id": "job_3d7e093e37ec4787bb5671f21bea7161",
+    "technician": "Lou",
+    "start": "2026-04-07T18:00:00Z",
+    "end": "2026-04-07T21:00:00Z",
+    "zipCode": "48094",
+    "title": ""
+  },
+  {
+    "id": "job_be3a9ff9c2a541c19cd284054632507e",
+    "technician": "Lou",
+    "start": "2026-04-08T17:00:00Z",
+    "end": "2026-04-08T19:00:00Z",
+    "zipCode": "48094",
+    "title": ""
+  },
+  {
+    "id": "job_0e5f54fdf7da4bf283e729e2c00915a2",
+    "technician": "Lou",
+    "start": "2026-04-08T13:00:00Z",
+    "end": "2026-04-08T15:45:00Z",
+    "zipCode": "48304",
+    "title": ""
+  },
+  {
+    "id": "job_d377599f76d44a4fbcd38345b59cd246",
+    "technician": "Lou",
+    "start": "2026-04-08T18:00:00Z",
+    "end": "2026-04-08T21:00:00Z",
+    "zipCode": "48009",
+    "title": ""
+  },
+  {
+    "id": "job_50b096c0e0714dcaa1ac9f073398e458",
+    "technician": "Lou",
+    "start": "2026-04-09T13:00:00Z",
+    "end": "2026-04-09T16:00:00Z",
+    "zipCode": "48348",
+    "title": "EV"
+  },
+  {
+    "id": "job_bbc5ea274bb84e45a55678a9a8333934",
+    "technician": "Brandon",
+    "start": "2026-04-06T13:00:00Z",
+    "end": "2026-04-06T21:00:00Z",
+    "zipCode": "48304",
+    "title": ""
+  },
+  {
+    "id": "job_2f51d270ac08407498110abcd3b48043",
+    "technician": "Lou",
+    "start": "2026-04-08T17:00:00Z",
+    "end": "2026-04-08T21:00:00Z",
+    "zipCode": "48307",
+    "title": ""
+  },
+  {
+    "id": "job_ea6269e7798f4a6ba528ba7c8ef6180e",
+    "technician": "Lou",
+    "start": "2026-04-06T13:00:00Z",
+    "end": "2026-04-06T21:00:00Z",
+    "zipCode": "48084",
+    "title": "Complete 100 amp 20/40 panel with ground system (Underground with disconnect) (In Home)"
+  },
+  {
+    "id": "job_b0c1bad978864a188929fc841a7825ba",
+    "technician": "Lou",
+    "start": "2026-04-09T13:00:00Z",
+    "end": "2026-04-09T16:00:00Z",
+    "zipCode": "48302",
+    "title": ""
+  },
+  {
+    "id": "job_dcb7306018d949b5af35b6441993b9a2",
+    "technician": "Lou",
+    "start": "2026-04-07T16:00:00Z",
+    "end": "2026-04-07T18:00:00Z",
+    "zipCode": "48315",
+    "title": ""
+  },
+  {
+    "id": "job_0049103c0ded45649637797289f62455",
+    "technician": "Lou",
+    "start": "2026-04-07T13:00:00Z",
+    "end": "2026-04-07T16:00:00Z",
+    "zipCode": "48309",
+    "title": "Install customer supplied fixture"
+  },
+  {
+    "id": "job_a2cefae4616e4bad95b804a688ac0256",
+    "technician": "Lou",
+    "start": "2026-04-07T17:00:00Z",
+    "end": "2026-04-07T18:00:00Z",
+    "zipCode": "48237",
+    "title": ""
+  },
+  {
+    "id": "job_4e65d771403341caa0ad613911f67464",
+    "technician": "Lou",
+    "start": "2026-04-06T16:00:00Z",
+    "end": "2026-04-06T20:00:00Z",
+    "zipCode": "48042",
+    "title": "Hang Standard Chandelier Foyer  (In Home)"
+  },
+  {
+    "id": "job_77933f53da254075bfdb8056ebf3a1a8",
+    "technician": "Steve",
+    "start": "2026-04-08T13:00:00Z",
+    "end": "2026-04-08T17:00:00Z",
+    "zipCode": "48315",
+    "title": "Brass Floor Plug"
+  },
+  {
+    "id": "job_4885dee7add348a395969a5e20257f0b",
+    "technician": "Lou",
+    "start": "2026-04-09T13:00:00Z",
+    "end": "2026-04-09T15:00:00Z",
+    "zipCode": "48306",
+    "title": ""
+  },
+  {
+    "id": "job_0093eda887694bb1b5a989cfa69518d8",
+    "technician": "Brandon",
+    "start": "2026-04-09T13:00:00Z",
+    "end": "2026-04-09T21:00:00Z",
+    "zipCode": "48084",
+    "title": "TNE Price Book (In Home Pricing)  - 150 amp service change with ground system"
+  },
+  {
+    "id": "job_21b1becdb4e341bba7386a73a8254e21",
+    "technician": "Lou",
+    "start": "2026-04-07T13:00:00Z",
+    "end": "2026-04-07T17:00:00Z",
+    "zipCode": "48307",
+    "title": "100 amp service"
+  },
+  {
+    "id": "job_9ed617ba924543e984d5ab7b363b8f18",
+    "technician": "Lou",
+    "start": "2026-04-07T13:00:00Z",
+    "end": "2026-04-07T17:00:00Z",
+    "zipCode": "48237",
+    "title": "Repair unapproved wiring in basement as needed"
+  },
+  {
+    "id": "job_009392bf95f64566bbe62fc1d20545d8",
+    "technician": "Lou",
+    "start": "2026-04-07T18:00:00Z",
+    "end": "2026-04-07T21:00:00Z",
+    "zipCode": "48237",
+    "title": ""
+  },
+  {
+    "id": "job_5c446544ae9b4f32ad14f92b5afa4160",
+    "technician": "Lou",
+    "start": "2026-04-08T13:00:00Z",
+    "end": "2026-04-08T17:00:00Z",
+    "zipCode": "48092",
+    "title": "Hang difficult fixtures/reinforce in attic"
+  },
+  {
+    "id": "job_40a78cc7623b4a438a367edd30612d95",
+    "technician": "Steve",
+    "start": "2026-04-09T13:00:00Z",
+    "end": "2026-04-10T21:00:00Z",
+    "zipCode": "48085",
+    "title": "Ceiling fan with crank out box  (In Home)"
+  },
+  {
+    "id": "job_42240638310f410ab8edb6cfceb341ef",
+    "technician": "Steve",
+    "start": "2026-04-06T13:00:00Z",
+    "end": "2026-04-06T18:00:00Z",
+    "zipCode": "48094",
+    "title": "Repair - Interior Lighting (Sloped Recessed Cans)"
+  }
+]

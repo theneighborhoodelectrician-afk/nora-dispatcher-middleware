@@ -1,0 +1,18 @@
+[
+  {
+    "id": "job-100",
+    "technician": "Dave",
+    "start": "2026-04-07T13:00:00.000Z",
+    "end": "2026-04-07T14:00:00.000Z",
+    "zipCode": "48035",
+    "title": "Fixture replacement"
+  },
+  {
+    "id": "job-101",
+    "technician": "Steve",
+    "start": "2026-04-07T15:00:00.000Z",
+    "end": "2026-04-07T17:00:00.000Z",
+    "zipCode": "48038",
+    "title": "Commercial troubleshooting"
+  }
+]

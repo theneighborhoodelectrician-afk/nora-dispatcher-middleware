@@ -1,0 +1,453 @@
+import { AppConfig } from "../config.js";
+import { ExternalServiceError } from "../lib/errors.js";
+import { buildUrl, readJson } from "../lib/http.js";
+import { ScheduledJob, TechnicianName } from "../domain/types.js";
+
+export interface HousecallJobResponse {
+  jobs?: Array<{
+    id: string;
+    invoice_number?: string;
+    start_time?: string;
+    end_time?: string;
+    employee?: { name?: string };
+    address?: { postal_code?: string; zip?: string };
+    description?: string;
+    customer?: {
+      first_name?: string;
+      last_name?: string;
+      address?: {
+        zip?: string;
+        street?: string;
+        city?: string;
+        state?: string;
+      };
+    };
+    schedule?: {
+      scheduled_start?: string;
+      scheduled_end?: string;
+      arrival_window?: number;
+    };
+    assigned_employees?: Array<{
+      id?: string;
+      first_name?: string;
+      last_name?: string;
+      email?: string;
+    }>;
+  }>;
+  data?: Array<{
+    id: string;
+    invoice_number?: string;
+    start_time?: string;
+    end_time?: string;
+    employee?: { name?: string };
+    address?: { postal_code?: string; zip?: string };
+    description?: string;
+    customer?: {
+      first_name?: string;
+      last_name?: string;
+      address?: {
+        zip?: string;
+        street?: string;
+        city?: string;
+        state?: string;
+      };
+    };
+    schedule?: {
+      scheduled_start?: string;
+      scheduled_end?: string;
+      arrival_window?: number;
+    };
+    assigned_employees?: Array<{
+      id?: string;
+      first_name?: string;
+      last_name?: string;
+      email?: string;
+    }>;
+  }>;
+  meta?: {
+    next_cursor?: string;
+    next_page?: number;
+    has_more?: boolean;
+  };
+}
+
+interface HousecallCustomerResponse {
+  customers?: Array<{
+    id: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    mobile_number?: string;
+    home_number?: string;
+    address?: {
+      zip?: string;
+      street?: string;
+      city?: string;
+      state?: string;
+    };
+  }>;
+}
+
+export class HousecallProClient {
+  constructor(private readonly config: AppConfig["hcp"]) {}
+
+  async fetchScheduledJobs(start: string, end: string): Promise<ScheduledJob[]> {
+    if (!this.config.token) {
+      return [];
+    }
+
+    const pages = await this.fetchSchedulePages(start, end);
+
+    return pages
+      .flatMap((body) => body.jobs ?? body.data ?? [])
+      .map((job) => ({
+        id: job.id,
+        technician: normalizeTechnician(
+          job.employee?.name ?? employeeName(job.assigned_employees?.[0]),
+        ),
+        start: job.start_time ?? job.schedule?.scheduled_start ?? "",
+        end: job.end_time ?? job.schedule?.scheduled_end ?? "",
+        zipCode: job.address?.postal_code ?? job.address?.zip ?? job.customer?.address?.zip ?? "",
+        title: job.description ?? job.invoice_number ?? "Scheduled job",
+      }))
+      .filter((job) => Boolean(job.technician && job.start && job.end && job.zipCode));
+  }
+
+  async fetchSchedulePages(start: string, end: string): Promise<HousecallJobResponse[]> {
+    if (!this.config.token) {
+      return [];
+    }
+
+    return this.fetchPaginated<HousecallJobResponse>(this.config.schedulePath, {
+      scheduled_start_min: start,
+      scheduled_start_max: end,
+      page_size: "100",
+    });
+  }
+
+  async createBooking(payload: {
+    customer: {
+      firstName: string;
+      lastName?: string;
+      phone: string;
+      email?: string;
+      address?: string;
+      zipCode: string;
+    };
+    serviceName: string;
+    notes?: string;
+    start: string;
+    end: string;
+    technician: string;
+    target: "job" | "estimate";
+  }): Promise<{ id: string }> {
+    if (!this.config.token) {
+      return { id: `mock-${payload.target}-${Date.now()}` };
+    }
+
+    const customerId = await this.findOrCreateCustomer(payload.customer);
+
+    const path =
+      payload.target === "estimate" ? this.config.createEstimatePath : this.config.createJobPath;
+
+    const requestPayload = {
+      customer_id: customerId,
+      scheduled_start: payload.start,
+      scheduled_end: payload.end,
+      assigned_employee_name: payload.technician,
+      description: payload.serviceName,
+      notes: payload.notes,
+    };
+
+    const response = await fetch(buildUrl(this.config.baseUrl, path), {
+      ...this.requestInit("POST", requestPayload),
+    }).catch((error) => {
+      throw new ExternalServiceError(`Housecall Pro create ${payload.target} failed: ${String(error)}`);
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeReadResponseText(response);
+      throw new ExternalServiceError(
+        `Housecall Pro create ${payload.target} failed with ${response.status}`,
+        "That time is no longer available, so Nora should offer fresh options.",
+        {
+          status: response.status,
+          url: buildUrl(this.config.baseUrl, path),
+          body: errorBody,
+          requestPayload,
+        },
+      );
+    }
+
+    const body = await readJson<{ id?: string }>(response);
+    return { id: body.id ?? `hcp-${payload.target}-${Date.now()}` };
+  }
+
+  async findOrCreateCustomer(customer: {
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    zipCode: string;
+  }): Promise<string> {
+    const existing = await this.findCustomer(customer);
+    if (existing) {
+      return existing.id;
+    }
+
+    const response = await fetch(buildUrl(this.config.baseUrl, this.config.customerPath), {
+      ...this.requestInit("POST", {
+        first_name: customer.firstName,
+        last_name: customer.lastName,
+        email: customer.email,
+        mobile_number: customer.phone,
+        address: {
+          street: customer.address,
+          zip: customer.zipCode,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeReadResponseText(response);
+      throw new ExternalServiceError(
+        `Housecall Pro create customer failed with ${response.status}`,
+        "We couldn't create the customer record before booking.",
+        {
+          status: response.status,
+          url: buildUrl(this.config.baseUrl, this.config.customerPath),
+          body: errorBody,
+        },
+      );
+    }
+
+    const body = await readJson<{ id?: string; customer?: { id?: string } }>(response);
+    const customerId = body.id ?? body.customer?.id;
+    if (!customerId) {
+      throw new ExternalServiceError(
+        "Housecall Pro create customer did not return a customer id",
+        "We couldn't create the customer record before booking.",
+      );
+    }
+
+    return customerId;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      authorization: `Bearer ${this.config.token}`,
+      accept: "application/json",
+      ...(this.config.companyId ? { "x-company-id": this.config.companyId } : {}),
+    };
+  }
+
+  private requestInit(method: string, body?: unknown): RequestInit {
+    return {
+      method,
+      headers: {
+        ...this.headers(),
+        ...(body ? { "content-type": "application/json" } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    };
+  }
+
+  private async fetchPaginated<T extends HousecallJobResponse>(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<T[]> {
+    const results: T[] = [];
+    let nextCursor: string | undefined;
+    let nextPage = 1;
+
+    for (let index = 0; index < 20; index += 1) {
+      const pageParams: Record<string, string> = { ...params };
+      if (nextCursor) {
+        pageParams.cursor = nextCursor;
+      } else {
+        pageParams.page = String(nextPage);
+      }
+
+      const response = await this.fetchWithRetry(buildUrl(this.config.baseUrl, path, pageParams), {
+        headers: this.headers(),
+      });
+
+      if (!response.ok) {
+        const errorBody = await safeReadResponseText(response);
+        throw new ExternalServiceError(
+          `Housecall Pro paginated fetch failed with ${response.status}`,
+          "We hit a scheduling issue. Please try again.",
+          {
+            status: response.status,
+            url: buildUrl(this.config.baseUrl, path, pageParams),
+            body: errorBody,
+          },
+        );
+      }
+
+      const body = await readJson<T>(response);
+      results.push(body);
+
+      const linkHeader = response.headers.get("link");
+      nextCursor = body.meta?.next_cursor;
+      const hasMore = body.meta?.has_more;
+      const nextPageHeader = body.meta?.next_page;
+
+      if (nextCursor) {
+        continue;
+      }
+      if (typeof nextPageHeader === "number") {
+        nextPage = nextPageHeader;
+        continue;
+      }
+      if (hasMore) {
+        nextPage += 1;
+        continue;
+      }
+      if (linkHeader?.includes('rel="next"')) {
+        nextPage += 1;
+        continue;
+      }
+      break;
+    }
+
+    return results;
+  }
+
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const response = await fetch(url, init);
+      if (response.status !== 429 && response.status < 500) {
+        return response;
+      }
+
+      if (attempt === maxAttempts) {
+        return response;
+      }
+
+      const retryAfter = Number(response.headers.get("retry-after") ?? "0");
+      const backoffMs = retryAfter > 0 ? retryAfter * 1000 : 250 * 2 ** (attempt - 1);
+      await sleep(backoffMs + Math.round(Math.random() * 150));
+    }
+
+    throw new ExternalServiceError("Housecall Pro request retry logic exhausted unexpectedly.");
+  }
+
+  private async findCustomer(customer: {
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    email?: string;
+    zipCode: string;
+  }): Promise<{ id: string } | undefined> {
+    const response = await fetch(
+      buildUrl(this.config.baseUrl, this.config.customerPath, {
+        page_size: "100",
+        search: customer.phone,
+      }),
+      {
+        headers: this.headers(),
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await safeReadResponseText(response);
+      throw new ExternalServiceError(
+        `Housecall Pro customer search failed with ${response.status}`,
+        "We couldn't verify the customer record before booking.",
+        {
+          status: response.status,
+          url: buildUrl(this.config.baseUrl, this.config.customerPath, {
+            page_size: "100",
+            search: customer.phone,
+          }),
+          body: errorBody,
+        },
+      );
+    }
+
+    const body = await readJson<HousecallCustomerResponse>(response);
+    return body.customers?.find((candidate) =>
+      matchesCustomer(candidate, customer),
+    );
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function safeReadResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeTechnician(value: string | undefined): TechnicianName {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized?.includes("nate")) {
+    return "Nate";
+  }
+  if (normalized?.includes("steve")) {
+    return "Steve";
+  }
+  if (normalized?.includes("brandon")) {
+    return "Brandon";
+  }
+  if (normalized?.includes("dave")) {
+    return "Dave";
+  }
+  return "Lou";
+}
+
+function employeeName(
+  employee:
+    | {
+        first_name?: string;
+        last_name?: string;
+      }
+    | undefined,
+): string | undefined {
+  if (!employee) {
+    return undefined;
+  }
+  return [employee.first_name, employee.last_name].filter(Boolean).join(" ").trim() || undefined;
+}
+
+function matchesCustomer(
+  candidate: {
+    id: string;
+    email?: string;
+    mobile_number?: string;
+    home_number?: string;
+    address?: { zip?: string };
+  },
+  customer: {
+    phone: string;
+    email?: string;
+    zipCode: string;
+  },
+): boolean {
+  const normalizedPhone = normalizePhone(customer.phone);
+  const phones = [candidate.mobile_number, candidate.home_number]
+    .filter(Boolean)
+    .map((value) => normalizePhone(value!));
+
+  if (phones.includes(normalizedPhone)) {
+    return true;
+  }
+
+  if (customer.email && candidate.email && customer.email.toLowerCase() === candidate.email.toLowerCase()) {
+    return true;
+  }
+
+  return Boolean(candidate.address?.zip && candidate.address.zip === customer.zipCode);
+}
+
+function normalizePhone(value: string): string {
+  return value.replace(/\D/g, "");
+}
