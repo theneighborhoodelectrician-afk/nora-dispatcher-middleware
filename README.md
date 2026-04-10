@@ -1,12 +1,44 @@
-# Nora Dispatcher Middleware
+# BookSmart Dispatcher Middleware
 
-Webhook middleware for Nora, the AI booking bot for The Neighborhood Electrician. This service receives booking requests from GoHighLevel, checks Housecall Pro availability, applies routing and technician-skill rules, returns the three best appointment options, and then books the confirmed slot as a Housecall Pro job or estimate.
+Webhook middleware for BookSmart, the AI booking assistant for The Neighborhood Electrician. This service preserves the existing Housecall Pro booking engine, adds a BookSmart chat flow around it, checks real availability, returns appointment options, and books the confirmed slot as a Housecall Pro job or estimate.
+
+## BookSmart direction
+
+This repo is now being evolved incrementally toward BookSmart v1.
+
+- Housecall Pro remains the source of truth for availability and booking writes
+- BookSmart asks one question at a time and starts with city qualification
+- Structured config now lives in dedicated BookSmart config/types modules instead of prompt-only logic
+- Typed tool wrappers sit between chat orchestration and the existing HCP-backed services
+- Chat webhook deliveries now use idempotent replay protection
+
+What is preserved in this phase:
+
+- Existing HCP schedule reads and booking writes
+- Existing slot-building and booking services
+- Existing webhook/auth/storage foundations
+
+What is new in this phase:
+
+- `src/booksmart/` for structured service/config definitions
+- `src/adapters/hcp/` for a stable HCP adapter wrapper
+- `src/tools/booksmart.ts` for typed booking/chat tools
+- `src/channels/blooio/normalize.ts` for inbound channel normalization
+- A city-first BookSmart chat orchestration flow in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/services/chatbot.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/services/chatbot.ts)
+
+Still planned:
+
+- OpenAI Responses API orchestration
+- database-backed editable operator config
+- internal `/admin` operator console
+- richer conversation persistence beyond chat sessions
 
 ## What is included
 
 - Vercel-friendly TypeScript API handlers
 - Availability webhook: `POST /api/webhooks/availability`
 - Booking webhook: `POST /api/webhooks/booking`
+- Chat webhook: `POST /api/webhooks/chat`
 - Health check: `GET /api/health`
 - Health response includes storage mode and whether the Postgres schema is ready
 - Health response also includes whether storage auto-init is enabled
@@ -20,6 +52,7 @@ Webhook middleware for Nora, the AI booking bot for The Neighborhood Electrician
 - Housecall Pro adapter with retry and pagination scaffolding
 - In-memory idempotency protection for duplicate webhook deliveries
 - GHL-ready presentation payloads with reply text and exactly three option labels
+- Chat-ready conversation state for text-first booking flows
 
 ## Current business rules
 
@@ -59,12 +92,19 @@ api/
   webhooks/
     availability.ts
     booking.ts
+    chat.ts
 src/
+  adapters/
+    hcp/
+  booksmart/
+  channels/
+    blooio/
   config.ts
   domain/
   integrations/
   lib/
   schemas/
+  tools/
   services/
 tests/
 ```
@@ -157,7 +197,46 @@ npm run deploy:check
 6. Point GoHighLevel webhooks at:
    - `/api/webhooks/availability`
    - `/api/webhooks/booking`
+   - `/api/webhooks/chat` for Blooio or another text channel
 7. Send a test availability webhook first before enabling live booking traffic.
+
+## Chatbot webhook
+
+The chat route is designed for a text channel such as Blooio. It accepts a lightweight message payload,
+stores the conversation state, asks for missing details one step at a time, starts by qualifying the city,
+then gathers service type, address, contact details, and morning or afternoon preference before checking
+availability through the same HCP-backed services used elsewhere in the middleware.
+
+Example payload:
+
+```json
+{
+  "sessionId": "chat-123",
+  "text": "I need help installing recessed lights",
+  "contact": {
+    "phone": "586-555-0100"
+  }
+}
+```
+
+Example response:
+
+```json
+{
+  "success": true,
+  "sessionId": "chat-123",
+  "replyText": "What city is the project in?",
+  "stage": "collect_city"
+}
+```
+
+You can protect this route with either:
+
+- `x-nora-chat-secret`
+- `x-blooio-secret`
+- `x-nora-signature`
+
+using `BLOOIO_WEBHOOK_SECRET` as the shared secret.
 
 ## GoHighLevel webhook auth
 

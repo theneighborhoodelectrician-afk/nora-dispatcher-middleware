@@ -22,6 +22,7 @@ const baseConfig: AppConfig = {
     createEstimatePath: "/public/v1/estimates",
   },
   ghl: {},
+  blooio: {},
   storage: {
     autoInit: true,
   },

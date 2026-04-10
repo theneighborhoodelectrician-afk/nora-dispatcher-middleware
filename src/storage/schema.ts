@@ -22,4 +22,13 @@ create index if not exists middleware_webhook_events_webhook_id_idx
 
 create index if not exists middleware_webhook_events_created_at_idx
   on middleware_webhook_events (created_at);
+
+create table if not exists middleware_chat_sessions (
+  session_id text primary key,
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists middleware_chat_sessions_updated_at_idx
+  on middleware_chat_sessions (updated_at);
 `;

@@ -1,7 +1,8 @@
-import { StorageAdapter, WebhookEventRecord } from "./types.js";
+import { ChatSessionRecord, StorageAdapter, WebhookEventRecord } from "./types.js";
 
 const processedKeys = new Map<string, { createdAt: number; payload: unknown }>();
 const webhookEvents: WebhookEventRecord[] = [];
+const chatSessions = new Map<string, ChatSessionRecord>();
 
 export class MemoryStorageAdapter implements StorageAdapter {
   async getIdempotentResult<T>(key: string): Promise<T | undefined> {
@@ -18,6 +19,18 @@ export class MemoryStorageAdapter implements StorageAdapter {
     if (webhookEvents.length > 500) {
       webhookEvents.shift();
     }
+  }
+
+  async getChatSession<T>(sessionId: string): Promise<ChatSessionRecord<T> | undefined> {
+    return chatSessions.get(sessionId) as ChatSessionRecord<T> | undefined;
+  }
+
+  async storeChatSession<T>(sessionId: string, payload: T): Promise<void> {
+    chatSessions.set(sessionId, {
+      sessionId,
+      payload,
+      updatedAt: Date.now(),
+    });
   }
 
   async cleanupIdempotency(maxAgeMs = 24 * 60 * 60 * 1000): Promise<void> {

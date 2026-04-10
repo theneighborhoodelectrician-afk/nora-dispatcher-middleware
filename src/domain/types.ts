@@ -41,11 +41,13 @@ export interface CustomerRequest {
   lastName?: string;
   phone: string;
   email?: string;
+  city?: string;
   address?: string;
   zipCode: string;
   requestedService: string;
   notes?: string;
   sameDayRequested?: boolean;
+  preferredWindow?: "morning" | "afternoon";
 }
 
 export interface ServiceProfile {
