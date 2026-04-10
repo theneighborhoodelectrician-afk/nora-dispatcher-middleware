@@ -78,9 +78,81 @@
             </div>
           </div>
 
+          <div class="config-grid">
+            <section class="card panel service-types-panel">
+              <div class="panel-header">
+                <h3>Service Types</h3>
+                <button id="add-service-type" type="button">Duplicate Selected</button>
+              </div>
+              <div class="service-types-layout">
+                <div id="service-type-list" class="list compact-list"></div>
+                <div id="service-type-editor" class="detail-empty">
+                  Select a service type to edit core routing fields.
+                </div>
+              </div>
+            </section>
+
+            <section class="card panel">
+              <div class="panel-header">
+                <h3>Conversation Settings</h3>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Opening question</span>
+                  <input id="conversation-opening-question" type="text" />
+                </label>
+                <label class="field">
+                  <span>After-hours behavior</span>
+                  <select id="conversation-after-hours">
+                    <option value="continue">Continue</option>
+                    <option value="handoff">Handoff</option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>Handoff message</span>
+                  <textarea id="conversation-handoff-message" rows="4"></textarea>
+                </label>
+                <fieldset class="field field-wide">
+                  <legend>Request photos for</legend>
+                  <div class="checkbox-grid" id="conversation-request-photos"></div>
+                </fieldset>
+              </div>
+            </section>
+
+            <section class="card panel">
+              <div class="panel-header">
+                <h3>Service Areas</h3>
+              </div>
+              <div class="form-grid">
+                <label class="field field-wide">
+                  <span>Allowed cities</span>
+                  <textarea id="service-areas-allowed" rows="8" placeholder="One city per line"></textarea>
+                </label>
+                <label class="field field-wide">
+                  <span>Restricted cities</span>
+                  <textarea id="service-areas-restricted" rows="5" placeholder="One city per line"></textarea>
+                </label>
+                <label class="field">
+                  <span>Outside-area behavior</span>
+                  <select id="service-areas-behavior">
+                    <option value="handoff">Handoff</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="card panel">
+              <div class="panel-header">
+                <h3>Urgency Keywords</h3>
+                <button id="add-urgency-keyword" type="button">Add Keyword</button>
+              </div>
+              <div id="urgency-keywords-list" class="stack-list"></div>
+            </section>
+          </div>
+
           <section class="card panel">
             <div class="panel-header">
-              <h3>Config JSON</h3>
+              <h3>Advanced JSON</h3>
               <span id="config-status" class="status-text">No changes saved yet.</span>
             </div>
             <textarea id="config-editor" spellcheck="false"></textarea>

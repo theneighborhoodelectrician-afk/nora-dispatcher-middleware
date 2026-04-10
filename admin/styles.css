@@ -131,6 +131,47 @@ button {
   gap: 18px;
 }
 
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.service-types-panel {
+  grid-column: 1 / -1;
+}
+
+.service-types-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 16px;
+}
+
+.compact-list {
+  max-height: 520px;
+}
+
+.service-type-item {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.service-type-item.active {
+  border-color: rgba(154, 52, 18, 0.35);
+  box-shadow: 0 10px 20px rgba(154, 52, 18, 0.12);
+}
+
+.service-type-item p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.9rem;
+}
+
 .card,
 .panel {
   border: 1px solid var(--border);
@@ -245,9 +286,105 @@ button {
   gap: 8px;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field span,
+.field legend {
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.66);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.checkbox-item input {
+  width: auto;
+  margin: 0;
+}
+
+.stack-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stack-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 96px;
+  gap: 10px;
+  align-items: center;
+}
+
+.service-type-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.88rem;
+}
+
+.chip input {
+  width: auto;
+  margin: 0;
+}
+
+select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
 label,
 input,
 textarea,
+select,
 code {
   font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
@@ -287,7 +424,22 @@ textarea {
 @media (max-width: 1080px) {
   .shell,
   .layout-grid,
-  .detail-grid {
+  .detail-grid,
+  .config-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .service-types-layout,
+  .service-type-form {
+    grid-template-columns: 1fr;
+  }
+
+  .checkbox-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stack-row {
     grid-template-columns: 1fr;
   }
 
