@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_BOOKSMART_CONFIG } from "../src/booksmart/defaultConfig.js";
 import { MemoryStorageAdapter } from "../src/storage/memory.js";
 
 describe("memory storage adapter", () => {
@@ -19,5 +20,20 @@ describe("memory storage adapter", () => {
 
     const result = await storage.getIdempotentResult("old");
     expect(result).toBeUndefined();
+  });
+
+  it("stores and returns BookSmart config", async () => {
+    const storage = new MemoryStorageAdapter();
+    const config = {
+      ...DEFAULT_BOOKSMART_CONFIG,
+      conversation: {
+        ...DEFAULT_BOOKSMART_CONFIG.conversation,
+        openingQuestion: "Which city is the job in?",
+      },
+    };
+
+    await storage.storeBookSmartConfig(config);
+
+    await expect(storage.getBookSmartConfig()).resolves.toEqual(config);
   });
 });

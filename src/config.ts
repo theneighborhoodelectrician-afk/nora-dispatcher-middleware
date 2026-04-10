@@ -50,6 +50,9 @@ export interface AppConfig {
   blooio: {
     webhookSecret?: string;
   };
+  admin: {
+    secret?: string;
+  };
   storage: {
     postgresUrl?: string;
     autoInit: boolean;
@@ -83,6 +86,9 @@ export function getConfig(): AppConfig {
     },
     blooio: {
       webhookSecret: process.env.BLOOIO_WEBHOOK_SECRET,
+    },
+    admin: {
+      secret: process.env.ADMIN_SECRET,
     },
     storage: {
       postgresUrl: process.env.POSTGRES_URL,

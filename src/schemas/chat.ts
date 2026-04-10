@@ -5,8 +5,15 @@ export const chatWebhookSchema = z.object({
   conversationId: z.string().min(1).optional(),
   threadId: z.string().min(1).optional(),
   messageId: z.string().min(1).optional(),
+  leadSource: z.string().min(1).optional(),
+  source: z.string().min(1).optional(),
   text: z.string().min(1).optional(),
   body: z.string().min(1).optional(),
+  mediaUrls: z.array(z.string().min(1)).optional(),
+  attachments: z.array(z.object({
+    type: z.string().min(1).optional(),
+    url: z.string().min(1).optional(),
+  }).partial()).optional(),
   message: z.object({
     id: z.string().min(1).optional(),
     text: z.string().min(1).optional(),

@@ -85,6 +85,17 @@ export function requestPhoto(serviceType: ServiceTypeConfig): {
   };
 }
 
+export function getServiceTypeById(
+  serviceTypeId: string | undefined,
+  config: BookSmartConfig = DEFAULT_BOOKSMART_CONFIG,
+): ServiceTypeConfig | undefined {
+  if (!serviceTypeId) {
+    return undefined;
+  }
+
+  return config.serviceTypes.find((serviceType) => serviceType.id === serviceTypeId);
+}
+
 export function handoffToHuman(reason: "urgent" | "outside_service_area" | "fallback"): {
   handoffRequired: true;
   reason: string;

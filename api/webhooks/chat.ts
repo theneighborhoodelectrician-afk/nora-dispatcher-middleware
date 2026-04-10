@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
+import { normalizeBlooioInboundPayload } from "../../src/channels/blooio/normalize.js";
 import { getConfig } from "../../src/config.js";
 import { verifyWebhookAuth } from "../../src/integrations/gohighlevel.js";
 import { sendError, sendJson } from "../../src/lib/response.js";
@@ -75,6 +76,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     });
     sendJson(res, 200, reply);
   } catch (error) {
+    const normalized = normalizeBlooioInboundPayload((req.body ?? {}) as Record<string, unknown>);
+    if (normalized.sessionId) {
+      await storage.appendConversationStage({
+        conversationId: normalized.sessionId,
+        stage: "failed",
+        timestamp: Date.now(),
+        metadata: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }).catch(() => undefined);
+    }
     await storage.logWebhookEvent({
       webhookId,
       kind: "chat",

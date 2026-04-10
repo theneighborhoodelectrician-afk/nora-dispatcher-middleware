@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { getConfig } from "../../src/config.js";
+import { trackBookingRequest } from "../../src/conversations/webhookTracking.js";
 import { verifyWebhookAuth } from "../../src/integrations/gohighlevel.js";
 import { HousecallProClient } from "../../src/integrations/housecallPro.js";
 import { parseBookingRequest } from "../../src/lib/requestParsing.js";
@@ -34,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    const { request, selectedSlot, webhookId } = parseBookingRequest(req.body);
+    const { request, selectedSlot, conversationId, leadSource, webhookId } = parseBookingRequest(req.body);
     await storage.logWebhookEvent({
       webhookId,
       kind: "booking",
@@ -58,6 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const client = new HousecallProClient(config.hcp);
     const payload = await createBooking(request, selectedSlot, client, config);
+    await trackBookingRequest({
+      storage,
+      conversationId,
+      leadSource,
+      request,
+      selectedSlot,
+      response: payload,
+      timestamp: Date.now(),
+    });
     await storage.storeIdempotentResult(webhookId, payload);
     await storage.logWebhookEvent({
       webhookId,

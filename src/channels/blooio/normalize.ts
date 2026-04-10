@@ -1,7 +1,13 @@
 export interface NormalizedBlooioMessage {
   sessionId?: string;
   messageId?: string;
+  leadSource?: string;
   text?: string;
+  mediaUrls?: string[];
+  attachments?: Array<{
+    type?: string;
+    url?: string;
+  }>;
   contact?: {
     id?: string;
     firstName?: string;
@@ -32,7 +38,10 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
   return {
     sessionId: stringValue(body.sessionId) ?? stringValue(body.conversationId) ?? stringValue(body.threadId) ?? stringValue(nestedContact.id),
     messageId: stringValue(body.messageId) ?? stringValue(nestedMessage.id),
+    leadSource: stringValue(body.leadSource) ?? stringValue(body.source),
     text: stringValue(body.text) ?? stringValue(body.body) ?? stringValue(nestedMessage.text) ?? stringValue(nestedMessage.body),
+    mediaUrls: stringArrayValue(body.mediaUrls),
+    attachments: attachmentArrayValue(body.attachments),
     contact: {
       id: stringValue(nestedContact.id),
       firstName: stringValue(nestedContact.firstName),
@@ -62,4 +71,31 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length ? items : undefined;
+}
+
+function attachmentArrayValue(
+  value: unknown,
+): Array<{ type?: string; url?: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value
+    .map((item) => asRecord(item))
+    .map((item) => ({
+      type: stringValue(item.type),
+      url: stringValue(item.url),
+    }))
+    .filter((item) => item.type || item.url);
+
+  return items.length ? items : undefined;
 }

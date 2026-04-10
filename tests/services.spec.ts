@@ -25,6 +25,7 @@ const config: AppConfig = {
   },
   ghl: {},
   blooio: {},
+  admin: {},
   storage: {
     autoInit: true,
   },

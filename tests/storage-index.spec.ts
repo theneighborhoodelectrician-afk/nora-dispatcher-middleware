@@ -23,6 +23,7 @@ const baseConfig: AppConfig = {
   },
   ghl: {},
   blooio: {},
+  admin: {},
   storage: {
     autoInit: true,
   },

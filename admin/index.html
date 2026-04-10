@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BookSmart Admin</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Internal Console</p>
+          <h1>BookSmart Admin</h1>
+          <p class="subtle">
+            Review live conversation tracking and edit structured routing config without touching prompt text.
+          </p>
+        </div>
+
+        <section class="card auth-card">
+          <label for="admin-secret">Admin secret</label>
+          <div class="secret-row">
+            <input id="admin-secret" type="password" placeholder="x-admin-secret" />
+            <button id="save-secret" type="button">Save</button>
+          </div>
+          <p class="status-text" id="secret-status">Saved only in this browser tab.</p>
+        </section>
+
+        <nav class="nav">
+          <button class="nav-link active" data-view="conversations" type="button">Conversations</button>
+          <button class="nav-link" data-view="config" type="button">Config</button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <section class="view active" id="view-conversations">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Tracking</p>
+              <h2>Conversation Records</h2>
+            </div>
+            <button id="refresh-conversations" type="button">Refresh</button>
+          </div>
+
+          <div class="layout-grid">
+            <section class="card panel">
+              <div class="panel-header">
+                <h3>Recent Outcomes</h3>
+                <label class="limit-control">
+                  <span>Limit</span>
+                  <input id="conversation-limit" type="number" min="1" max="200" value="25" />
+                </label>
+              </div>
+              <div id="conversation-list" class="list"></div>
+            </section>
+
+            <section class="card panel detail-panel">
+              <div class="panel-header">
+                <h3>Conversation Detail</h3>
+                <code id="detail-id">Select a conversation</code>
+              </div>
+              <div id="conversation-detail" class="detail-empty">
+                Choose a conversation outcome to load stages, transcript messages, slot exposure, urgency hits, booking events, and handoffs.
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-config">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">Configuration</p>
+              <h2>BookSmart Config</h2>
+            </div>
+            <div class="button-row">
+              <button id="load-config" type="button">Reload</button>
+              <button id="save-config" type="button">Save Config</button>
+            </div>
+          </div>
+
+          <section class="card panel">
+            <div class="panel-header">
+              <h3>Config JSON</h3>
+              <span id="config-status" class="status-text">No changes saved yet.</span>
+            </div>
+            <textarea id="config-editor" spellcheck="false"></textarea>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/admin/app.js"></script>
+  </body>
+</html>

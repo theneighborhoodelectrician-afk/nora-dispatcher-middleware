@@ -1,7 +1,20 @@
 import { DEFAULT_BOOKSMART_CONFIG } from "../booksmart/defaultConfig.js";
+import { loadBookSmartConfig } from "../booksmart/storage.js";
 import { BookSmartServiceTypeId } from "../booksmart/types.js";
 import { normalizeBlooioInboundPayload } from "../channels/blooio/normalize.js";
 import { AppConfig } from "../config.js";
+import {
+  createInitialAnalytics,
+  inferPhotoSent,
+  mergeUrgencyKeywords,
+  normalizeLeadSource,
+  recordMessage,
+  recordSlotExposureSet,
+  recordSlotSelection,
+  recordStageOnce,
+  syncConversationSnapshot,
+} from "../conversations/tracking.js";
+import { ConversationStage, LeadSourceCode } from "../conversations/types.js";
 import { CustomerRequest, PresentedSlotOption } from "../domain/types.js";
 import { AppError } from "../lib/errors.js";
 import { chatWebhookSchema } from "../schemas/chat.js";
@@ -11,6 +24,7 @@ import {
   classifyServiceType,
   createBookingTool,
   detectUrgency,
+  getServiceTypeById,
   getAvailabilityTool,
   handoffToHuman,
   requestPhoto,
@@ -34,6 +48,20 @@ interface ChatTranscriptEntry {
   createdAt: number;
 }
 
+interface ChatAnalyticsState {
+  timestampStarted: number;
+  firstCustomerMessage: string;
+  leadSource: LeadSourceCode;
+  recordedStages: ConversationStage[];
+  urgencyKeywordsDetected: string[];
+  exposedSlotOptionIds: string[];
+  selectedSlotOptionId?: string;
+  slotsShownCount: number;
+  photoRequested: boolean;
+  photoSent: boolean;
+  finalHcpJobType?: string;
+}
+
 export interface ChatSessionState {
   sessionId: string;
   stage: ChatStage;
@@ -43,6 +71,7 @@ export interface ChatSessionState {
   urgency?: "normal" | "urgent";
   lastOfferedOptions?: PresentedSlotOption[];
   transcript: ChatTranscriptEntry[];
+  analytics: ChatAnalyticsState;
 }
 
 export interface ChatReplyPayload {
@@ -76,13 +105,43 @@ export async function handleChatMessage(
     throw new AppError("Missing chat message text", 400, "The chat message was empty.");
   }
 
+  const now = Date.now();
+  const leadSource = normalizeLeadSource(normalized.leadSource);
   const existing = await storage.getChatSession<ChatSessionState>(sessionId);
-  const state = mergeState(existing?.payload, sessionId, normalized, messageText);
+  const state = mergeState(existing?.payload, sessionId, normalized, messageText, now, leadSource);
+  const photoReceivedThisTurn = inferPhotoSent(normalized);
+  state.analytics.photoSent = state.analytics.photoSent || photoReceivedThisTurn;
+  const bookSmartConfig = await loadBookSmartConfig(storage);
   appendTranscript(state, "inbound", messageText);
+  await syncConversationSnapshot(storage, state, leadSource, now);
+  await recordStageOnce(storage, state, "started", now, { leadSource });
+  if (photoReceivedThisTurn) {
+    await recordStageOnce(storage, state, "photo_received", now);
+  }
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "inbound",
+    text: messageText,
+    timestamp: now,
+    metadata: {
+      messageId: normalized.messageId,
+    },
+  });
 
   if (state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
     const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
     if (selectedOption) {
+      await recordSlotSelection(storage, state, selectedOption, now);
+      await recordStageOnce(storage, state, "slot_selected", now, {
+        slotLabel: selectedOption.label,
+      });
+      await recordMessage(storage, {
+        conversationId: state.sessionId,
+        direction: "tool",
+        timestamp: now,
+        toolName: "create_booking",
+        toolCallSummary: `Booking requested for ${selectedOption.label}.`,
+      });
       const booking = await createBookingTool(
         toCustomerRequest(state.customer),
         {
@@ -102,6 +161,20 @@ export async function handleChatMessage(
       if (booking.status === "booked") {
         state.stage = "booked";
         state.bookingStatus = "booked";
+        state.analytics.finalHcpJobType = selectedOption.bookingTarget;
+        await storage.appendBookingEvent({
+          conversationId: state.sessionId,
+          bookingExternalId: booking.externalId,
+          finalHcpJobType: selectedOption.bookingTarget,
+          bookingStatus: booking.status,
+          timestamp: now,
+          metadata: {
+            slotLabel: selectedOption.label,
+          },
+        });
+        await recordStageOnce(storage, state, "booked", now, {
+          bookingId: booking.externalId,
+        });
         const reply = `${booking.presentation.replyText} You’re booked for ${selectedOption.label}.`;
         return persistReply(storage, state, {
           success: true,
@@ -109,48 +182,80 @@ export async function handleChatMessage(
           replyText: reply,
           stage: state.stage,
           bookingId: booking.externalId,
-        });
+        }, now);
       }
 
       if (booking.presentation.options?.length) {
         state.lastOfferedOptions = booking.presentation.options;
         state.stage = "offer_slots";
         state.bookingStatus = "offered";
+        await recordSlotExposureSet(storage, state, booking.presentation.options, now);
+        await recordStageOnce(storage, state, "availability_presented", now, {
+          slotCount: booking.presentation.options.length,
+        });
         return persistReply(storage, state, {
           success: true,
           sessionId,
           replyText: booking.presentation.replyText,
           stage: state.stage,
           options: state.lastOfferedOptions,
-        });
+        }, now);
       }
 
       state.stage = "human_handoff";
       state.bookingStatus = "handoff";
+      await storage.appendBookingEvent({
+        conversationId: state.sessionId,
+        finalHcpJobType: selectedOption.bookingTarget,
+        bookingStatus: booking.status,
+        timestamp: now,
+      });
+      await storage.appendHandoffEvent({
+        conversationId: state.sessionId,
+        reason: "booking_fallback",
+        timestamp: now,
+        metadata: {
+          bookingStatus: booking.status,
+        },
+      });
+      await recordStageOnce(storage, state, "escalated", now, {
+        reason: "booking_fallback",
+      });
       return persistReply(storage, state, {
         success: true,
         sessionId,
         replyText: booking.presentation.replyText,
         stage: state.stage,
         handoffRequired: true,
-      });
+      }, now);
     }
   }
 
   if (shouldHandOff(messageText)) {
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    await storage.appendHandoffEvent({
+      conversationId: state.sessionId,
+      reason: "human_requested",
+      timestamp: now,
+    });
+    await recordStageOnce(storage, state, "escalated", now, {
+      reason: "human_requested",
+    });
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: DEFAULT_BOOKSMART_CONFIG.conversation.handoffMessage,
+      replyText: bookSmartConfig.conversation.handoffMessage,
       stage: state.stage,
       handoffRequired: true,
-    });
+    }, now);
   }
 
   if (state.stage === "collect_city" && state.transcript.length > 1) {
     state.customer.city = messageText;
+    await recordStageOnce(storage, state, "city_collected", now, {
+      city: state.customer.city,
+    });
   }
 
   if (!state.customer.city) {
@@ -158,39 +263,89 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: DEFAULT_BOOKSMART_CONFIG.conversation.openingQuestion,
+      replyText: bookSmartConfig.conversation.openingQuestion,
       stage: state.stage,
-    });
+    }, now);
   }
 
-  const areaDecision = checkServiceArea(state.customer.city);
+  const areaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "tool",
+    timestamp: now,
+    toolName: "check_service_area",
+    toolCallSummary: `Checked service area for ${state.customer.city ?? "unknown city"}.`,
+    metadata: {
+      ok: areaDecision.ok,
+    },
+  });
   if (!areaDecision.ok) {
     handoffToHuman("outside_service_area");
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    await storage.appendHandoffEvent({
+      conversationId: state.sessionId,
+      reason: "outside_service_area",
+      timestamp: now,
+      metadata: {
+        city: state.customer.city,
+      },
+    });
+    await recordStageOnce(storage, state, "escalated", now, {
+      reason: "outside_service_area",
+    });
     return persistReply(storage, state, {
       success: true,
       sessionId,
       replyText: "Thanks. That area needs a quick manual review from our team before we book it.",
       stage: state.stage,
       handoffRequired: true,
-    });
+    }, now);
   }
 
   if (!state.customer.requestedService) {
     if (state.stage === "collect_service_type") {
-      setServiceDetails(state, messageText);
+      await recordMessage(storage, {
+        conversationId: state.sessionId,
+        direction: "tool",
+        timestamp: now,
+        toolName: "classify_service_type",
+        toolCallSummary: `Classifying service type from customer message.`,
+      });
+      setServiceDetails(state, messageText, bookSmartConfig);
+      await recordStageOnce(storage, state, "service_identified", now, {
+        serviceTypeId: state.serviceTypeId,
+      });
       if (state.urgency === "urgent") {
         handoffToHuman("urgent");
         state.stage = "human_handoff";
         state.bookingStatus = "handoff";
+        await persistUrgencyHits(storage, state, now);
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason: "urgent",
+          timestamp: now,
+          metadata: {
+            keywords: state.analytics.urgencyKeywordsDetected,
+          },
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp: now,
+          toolName: "handoff_to_human",
+          toolCallSummary: `Escalating urgent request to a human.`,
+        });
+        await recordStageOnce(storage, state, "escalated", now, {
+          reason: "urgent",
+        });
         return persistReply(storage, state, {
           success: true,
           sessionId,
           replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
           stage: state.stage,
           handoffRequired: true,
-        });
+        }, now);
       }
 
       return persistReply(storage, state, {
@@ -198,7 +353,7 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What’s the service address?",
         stage: state.stage,
-      });
+      }, now);
     } else {
       state.stage = "collect_service_type";
       return persistReply(storage, state, {
@@ -206,31 +361,53 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What kind of electrical project do you need help with?",
         stage: state.stage,
-      });
+      }, now);
     }
   }
 
   if (!state.customer.requestedService) {
-    setServiceDetails(state, messageText);
+    setServiceDetails(state, messageText, bookSmartConfig);
   }
 
   if (state.urgency === "urgent") {
     handoffToHuman("urgent");
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    await persistUrgencyHits(storage, state, now);
+    await storage.appendHandoffEvent({
+      conversationId: state.sessionId,
+      reason: "urgent",
+      timestamp: now,
+      metadata: {
+        keywords: state.analytics.urgencyKeywordsDetected,
+      },
+    });
+    await recordMessage(storage, {
+      conversationId: state.sessionId,
+      direction: "tool",
+      timestamp: now,
+      toolName: "handoff_to_human",
+      toolCallSummary: `Escalating urgent request to a human.`,
+    });
+    await recordStageOnce(storage, state, "escalated", now, {
+      reason: "urgent",
+    });
     return persistReply(storage, state, {
       success: true,
       sessionId,
       replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
       stage: state.stage,
       handoffRequired: true,
-    });
+    }, now);
   }
 
   if (!state.customer.address) {
     if (state.stage === "collect_address") {
       state.customer.address = messageText;
       state.customer.zipCode = state.customer.zipCode ?? extractZipCode(messageText);
+      await recordStageOnce(storage, state, "address_collected", now, {
+        zipCode: state.customer.zipCode,
+      });
       if (!state.customer.zipCode) {
         state.stage = "collect_zip";
         return persistReply(storage, state, {
@@ -238,7 +415,7 @@ export async function handleChatMessage(
           sessionId,
           replyText: "What zip code is the project in?",
           stage: state.stage,
-        });
+        }, now);
       }
 
       state.stage = "collect_name";
@@ -247,7 +424,7 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What’s your first name?",
         stage: state.stage,
-      });
+      }, now);
     } else {
       state.stage = "collect_address";
       return persistReply(storage, state, {
@@ -255,7 +432,7 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What’s the service address?",
         stage: state.stage,
-      });
+      }, now);
     }
   }
 
@@ -268,16 +445,19 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What zip code is the project in?",
         stage: state.stage,
-      });
+      }, now);
     }
     state.customer.zipCode = zip;
+    await recordStageOnce(storage, state, "address_collected", now, {
+      zipCode: zip,
+    });
     state.stage = "collect_name";
     return persistReply(storage, state, {
       success: true,
       sessionId,
       replyText: "What’s your first name?",
       stage: state.stage,
-    });
+    }, now);
   }
 
   if (!state.customer.firstName) {
@@ -290,16 +470,19 @@ export async function handleChatMessage(
           sessionId,
           replyText: "What’s the best phone number for the booking?",
           stage: state.stage,
-        });
+        }, now);
       }
 
+      await recordStageOnce(storage, state, "contact_collected", now, {
+        firstName: state.customer.firstName,
+      });
       state.stage = "collect_preferred_window";
       return persistReply(storage, state, {
         success: true,
         sessionId,
         replyText: "Do you prefer a morning or afternoon appointment?",
         stage: state.stage,
-      });
+      }, now);
     } else {
       state.stage = "collect_name";
       return persistReply(storage, state, {
@@ -307,7 +490,7 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What’s your first name?",
         stage: state.stage,
-      });
+      }, now);
     }
   }
 
@@ -320,16 +503,19 @@ export async function handleChatMessage(
         sessionId,
         replyText: "What’s the best phone number for the booking?",
         stage: state.stage,
-      });
+      }, now);
     }
     state.customer.phone = phone;
+    await recordStageOnce(storage, state, "contact_collected", now, {
+      phone,
+    });
     state.stage = "collect_preferred_window";
     return persistReply(storage, state, {
       success: true,
       sessionId,
       replyText: "Do you prefer a morning or afternoon appointment?",
       stage: state.stage,
-    });
+    }, now);
   }
 
   if (!state.customer.preferredWindow) {
@@ -337,10 +523,14 @@ export async function handleChatMessage(
     state.stage = "collect_preferred_window";
     if (!preferredWindow) {
       const photoPrompt = state.serviceTypeId
-        ? requestPhoto(
-            DEFAULT_BOOKSMART_CONFIG.serviceTypes.find((serviceType) => serviceType.id === state.serviceTypeId)!,
-          ).message
+        ? requestPhoto(getServiceTypeById(state.serviceTypeId, bookSmartConfig)!).message
         : undefined;
+      if (photoPrompt) {
+        state.analytics.photoRequested = true;
+        await recordStageOnce(storage, state, "photo_requested", now, {
+          serviceTypeId: state.serviceTypeId,
+        });
+      }
       const reply = photoPrompt
         ? `Do you prefer a morning or afternoon appointment? ${photoPrompt}`
         : "Do you prefer a morning or afternoon appointment?";
@@ -349,35 +539,54 @@ export async function handleChatMessage(
         sessionId,
         replyText: reply,
         stage: state.stage,
-      });
+      }, now);
     }
     state.customer.preferredWindow = preferredWindow;
   }
 
-  const availability = await getAvailabilityTool(toCustomerRequest(state.customer), config);
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "tool",
+    timestamp: now,
+    toolName: "get_availability",
+    toolCallSummary: `Checking live availability for ${state.customer.requestedService}.`,
+  });
+  const availability = await getAvailabilityTool(toCustomerRequest(state.customer), config, bookSmartConfig);
   state.lastOfferedOptions = availability.presentation.options;
 
   if (availability.status === "slots_available" && availability.presentation.options?.length) {
     state.stage = "offer_slots";
     state.bookingStatus = "offered";
+    await recordSlotExposureSet(storage, state, availability.presentation.options, now);
+    await recordStageOnce(storage, state, "availability_presented", now, {
+      slotCount: availability.presentation.options.length,
+    });
     return persistReply(storage, state, {
       success: true,
       sessionId,
       replyText: availability.presentation.replyText,
       stage: state.stage,
       options: availability.presentation.options,
-    });
+    }, now);
   }
 
   state.stage = "human_handoff";
   state.bookingStatus = "handoff";
+  await storage.appendHandoffEvent({
+    conversationId: state.sessionId,
+    reason: availability.status,
+    timestamp: now,
+  });
+  await recordStageOnce(storage, state, "escalated", now, {
+    reason: availability.status,
+  });
   return persistReply(storage, state, {
     success: true,
     sessionId,
     replyText: availability.presentation.replyText,
     stage: state.stage,
     handoffRequired: true,
-  });
+  }, now);
 }
 
 function mergeState(
@@ -385,6 +594,8 @@ function mergeState(
   sessionId: string,
   normalized: ReturnType<typeof normalizeBlooioInboundPayload>,
   messageText: string,
+  timestamp: number,
+  leadSource: LeadSourceCode,
 ): ChatSessionState {
   const next: ChatSessionState = current ?? {
     sessionId,
@@ -392,6 +603,7 @@ function mergeState(
     customer: {},
     bookingStatus: "collecting",
     transcript: [],
+    analytics: createInitialAnalytics(timestamp, messageText, leadSource),
   };
 
   next.customer.phone = normalized.customer?.phone ?? normalized.contact?.phone ?? next.customer.phone;
@@ -412,13 +624,21 @@ function mergeState(
   return next;
 }
 
-function setServiceDetails(state: ChatSessionState, messageText: string): void {
-  const serviceMatch = classifyServiceType(messageText);
+function setServiceDetails(
+  state: ChatSessionState,
+  messageText: string,
+  config = DEFAULT_BOOKSMART_CONFIG,
+): void {
+  const serviceMatch = classifyServiceType(messageText, config);
   state.customer.requestedService = serviceMatch.serviceType.requestedServiceLabel;
   state.serviceTypeId = serviceMatch.serviceType.id;
   state.stage = "collect_address";
 
-  const urgency = detectUrgency(messageText);
+  const urgency = detectUrgency(messageText, config);
+  state.analytics.urgencyKeywordsDetected = mergeUrgencyKeywords(
+    state.analytics.urgencyKeywordsDetected,
+    urgency.matchedKeyword,
+  );
   if (urgency.urgent || serviceMatch.serviceType.category === "urgent") {
     state.urgency = "urgent";
     return;
@@ -455,8 +675,21 @@ async function persistReply(
   storage: StorageAdapter,
   state: ChatSessionState,
   payload: ChatReplyPayload,
+  timestamp = Date.now(),
 ): Promise<ChatReplyPayload> {
   appendTranscript(state, "outbound", payload.replyText);
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "outbound",
+    text: payload.replyText,
+    timestamp,
+    metadata: {
+      stage: payload.stage,
+      handoffRequired: payload.handoffRequired,
+      bookingId: payload.bookingId,
+    },
+  });
+  await syncConversationSnapshot(storage, state, state.analytics.leadSource, timestamp);
   await storage.storeChatSession(state.sessionId, state);
   return payload;
 }
@@ -534,4 +767,23 @@ function matchOptionSelection(
   }
 
   return options.find((option) => normalized.includes(option.label.toLowerCase()));
+}
+
+async function persistUrgencyHits(
+  storage: StorageAdapter,
+  state: ChatSessionState,
+  timestamp: number,
+): Promise<void> {
+  for (const keyword of state.analytics.urgencyKeywordsDetected) {
+    const existing = await storage.listUrgencyKeywordHits(state.sessionId);
+    if (existing.some((hit) => hit.keywordDetected === keyword)) {
+      continue;
+    }
+    await storage.appendUrgencyKeywordHit({
+      conversationId: state.sessionId,
+      keywordDetected: keyword,
+      mappedUrgencyLevel: "urgent",
+      timestamp,
+    });
+  }
 }

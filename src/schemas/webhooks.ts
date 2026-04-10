@@ -4,6 +4,9 @@ const optionalString = z.string().trim().optional().or(z.literal("").transform((
 
 export const availabilityWebhookSchema = z.object({
   webhookId: optionalString,
+  conversationId: optionalString,
+  leadSource: optionalString,
+  source: optionalString,
   type: optionalString,
   timestamp: optionalString,
   contact: z
@@ -13,6 +16,7 @@ export const availabilityWebhookSchema = z.object({
       phone: optionalString,
       email: optionalString,
       address1: optionalString,
+      city: optionalString,
       postalCode: optionalString,
     })
     .partial()
@@ -24,6 +28,7 @@ export const availabilityWebhookSchema = z.object({
       phone: optionalString,
       email: optionalString,
       address: optionalString,
+      city: optionalString,
       zipCode: optionalString,
     })
     .partial()
@@ -34,6 +39,7 @@ export const availabilityWebhookSchema = z.object({
   phone: optionalString,
   email: optionalString,
   address: optionalString,
+  city: optionalString,
   zipCode: optionalString,
   requestedService: optionalString,
   service: optionalString,

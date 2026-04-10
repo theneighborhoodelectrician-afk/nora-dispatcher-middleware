@@ -33,6 +33,57 @@ Still planned:
 - internal `/admin` operator console
 - richer conversation persistence beyond chat sessions
 
+## Admin API
+
+The project now exposes read-only conversation analytics plus BookSmart config management endpoints for future operator-console work.
+
+- `GET /api/admin/conversations`
+  Returns recent structured conversation outcomes.
+- `GET /api/admin/conversations?conversationId=...`
+  Returns the full conversation bundle:
+  conversation, outcome, stages, transcript messages, slot exposures, urgency hits, booking events, and handoff events.
+- `GET /api/admin/booksmart-config`
+  Returns the current stored BookSmart config, seeding defaults if none exists yet.
+- `PUT /api/admin/booksmart-config`
+  Validates and saves a full BookSmart config payload.
+
+If `ADMIN_SECRET` is configured, send it as `x-admin-secret`.
+
+## Admin UI
+
+A lightweight internal console now exists at `/admin/`.
+
+Current capabilities:
+
+- view recent structured conversation outcomes
+- inspect a full conversation record with stages, transcript, slot exposure, urgency hits, bookings, and handoffs
+- load and save the full BookSmart config JSON through the authenticated admin API
+
+This UI is intentionally thin in v1. It is a static internal surface over the admin APIs, not yet a fully modeled operator dashboard.
+
+## Conversation Tracking
+
+BookSmart now persists a structured conversation analytics layer for future human-reviewed optimization work.
+
+- `conversations`
+- `contacts`
+- `conversation_outcomes`
+- `conversation_stage_history`
+- `slot_exposure_history`
+- `urgency_keyword_hits`
+- `conversation_messages`
+- `lead_sources`
+- `booking_events`
+- `handoff_events`
+
+This tracking is write-only operational data in v1. It does not automatically retrain prompts, change routing, or modify operator settings.
+
+Assumptions in the current implementation:
+
+- `lead_source` is normalized from inbound chat payload values and falls back to `unknown`
+- `photo_received` is inferred only when the inbound payload includes image attachments or media URLs
+- `abandonment_stage` is stored as the current incomplete stage for unfinished conversations, but true `abandoned` stage transitions are not inferred synchronously during an active chat session
+
 ## What is included
 
 - Vercel-friendly TypeScript API handlers

@@ -40,6 +40,11 @@ function normalizeBasePayload(body: unknown) {
       customer.address ??
       contact.address1 ??
       getNestedString(data, "address"),
+    city:
+      parsed.data.city ??
+      customer.city ??
+      contact.city ??
+      getNestedString(data, "city"),
     zipCode:
       parsed.data.zipCode ??
       customer.zipCode ??
@@ -69,12 +74,25 @@ function normalizeBasePayload(body: unknown) {
 
   return {
     request,
+    conversationId:
+      parsed.data.conversationId ??
+      getNestedString(data, "conversationId") ??
+      parsed.data.webhookId ??
+      getNestedString(data, "webhookId") ??
+      request.phone,
+    leadSource:
+      parsed.data.leadSource ??
+      parsed.data.source ??
+      getNestedString(data, "leadSource") ??
+      getNestedString(data, "source"),
     webhookId: parsed.data.webhookId ?? getNestedString(data, "webhookId") ?? request.phone,
   };
 }
 
 export function parseAvailabilityRequest(body: unknown): {
   request: CustomerRequest;
+  conversationId: string;
+  leadSource?: string;
   webhookId: string;
 } {
   return normalizeBasePayload(body);
@@ -83,6 +101,8 @@ export function parseAvailabilityRequest(body: unknown): {
 export function parseBookingRequest(body: unknown): {
   request: CustomerRequest;
   selectedSlot: CandidateSlot;
+  conversationId: string;
+  leadSource?: string;
   webhookId: string;
 } {
   const parsed = bookingWebhookSchema.safeParse(body);

@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { getConfig } from "../../src/config.js";
+import { trackAvailabilityRequest } from "../../src/conversations/webhookTracking.js";
 import { verifyWebhookAuth } from "../../src/integrations/gohighlevel.js";
 import { HousecallProClient } from "../../src/integrations/housecallPro.js";
 import { parseAvailabilityRequest } from "../../src/lib/requestParsing.js";
@@ -34,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    const { request, webhookId } = parseAvailabilityRequest(req.body);
+    const { request, conversationId, leadSource, webhookId } = parseAvailabilityRequest(req.body);
     await storage.logWebhookEvent({
       webhookId,
       kind: "availability",
@@ -58,6 +59,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const client = new HousecallProClient(config.hcp);
     const payload = await getAvailability(request, client, config);
+    await trackAvailabilityRequest({
+      storage,
+      conversationId,
+      leadSource,
+      request,
+      response: payload,
+      timestamp: Date.now(),
+    });
     await storage.storeIdempotentResult(webhookId, payload);
     await storage.logWebhookEvent({
       webhookId,
