@@ -1,6 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { getConfig } from "../../src/config.js";
-import { isAdminAuthorized } from "../../src/admin/auth.js";
 import { sendJson } from "../../src/lib/response.js";
 import { runHcpBookingSmokeTest } from "../../src/integrations/hcpBookingSmokeTest.js";
 
@@ -61,20 +60,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   const body = (req.body ?? {}) as SmokeTestPayload;
-  const bodySecret = typeof body.adminSecret === "string" ? body.adminSecret : undefined;
-  const headerSecret = req.headers["x-admin-secret"];
-  const candidateHeaderSecret = Array.isArray(headerSecret) ? headerSecret[0] : headerSecret;
-  const authorized =
-    !config.admin.secret ||
-    candidateHeaderSecret === config.admin.secret ||
-    bodySecret === config.admin.secret ||
-    isAdminAuthorized(req, config);
-
-  if (!authorized) {
-    sendJson(res, 401, { success: false, message: "Admin authorization required." });
-    return;
-  }
-
   const validationError = validatePayload(body);
   if (validationError) {
     sendJson(res, 400, { success: false, message: validationError });
