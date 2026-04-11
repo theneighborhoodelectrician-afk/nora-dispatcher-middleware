@@ -1,6 +1,11 @@
+const lockScreen = document.getElementById("admin-lock-screen");
+const appShell = document.getElementById("admin-app-shell");
 const secretInput = document.getElementById("admin-secret");
 const saveSecretButton = document.getElementById("save-secret");
 const secretStatus = document.getElementById("secret-status");
+const sidebarSecretInput = document.getElementById("admin-secret-sidebar");
+const sidebarSaveSecretButton = document.getElementById("save-secret-sidebar");
+const sidebarSecretStatus = document.getElementById("secret-status-sidebar");
 const navButtons = Array.from(document.querySelectorAll(".nav-link"));
 const views = Array.from(document.querySelectorAll(".view"));
 const conversationList = document.getElementById("conversation-list");
@@ -69,20 +74,27 @@ let currentConfig = null;
 let selectedServiceTypeId = null;
 let currentOutcomes = [];
 let currentConversationBundle = null;
+let adminUnlocked = false;
 
 boot();
 
 function boot() {
-  secretInput.value = sessionStorage.getItem(SECRET_STORAGE_KEY) ?? "";
+  const storedSecret = sessionStorage.getItem(SECRET_STORAGE_KEY) ?? "";
+  secretInput.value = storedSecret;
+  sidebarSecretInput.value = storedSecret;
   bindEvents();
-  loadConversations().catch(showConversationError);
-  loadConfig().catch(showConfigError);
+  verifyAndUnlock(false).catch(() => {
+    setLockedState(true);
+  });
 }
 
 function bindEvents() {
   saveSecretButton.addEventListener("click", () => {
-    sessionStorage.setItem(SECRET_STORAGE_KEY, secretInput.value.trim());
-    secretStatus.textContent = "Admin secret saved for this tab.";
+    verifyAndUnlock(true).catch(() => undefined);
+  });
+
+  sidebarSaveSecretButton.addEventListener("click", () => {
+    verifyAndUnlock(true).catch(() => undefined);
   });
 
   navButtons.forEach((button) => {
@@ -185,6 +197,36 @@ function bindEvents() {
     element.addEventListener("input", updateConfigFromForms);
     element.addEventListener("change", updateConfigFromForms);
   });
+}
+
+async function verifyAndUnlock(showSuccessMessage) {
+  const candidate = (secretInput.value || sidebarSecretInput.value || "").trim();
+  sessionStorage.setItem(SECRET_STORAGE_KEY, candidate);
+  secretInput.value = candidate;
+  sidebarSecretInput.value = candidate;
+
+  try {
+    const response = await fetch("/api/admin/conversations?limit=1", {
+      headers: buildAdminHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(response.status === 401 ? "Invalid admin secret." : "Could not verify admin access.");
+    }
+
+    adminUnlocked = true;
+    setLockedState(false);
+    secretStatus.textContent = showSuccessMessage ? "Admin access unlocked." : "Admin access restored.";
+    sidebarSecretStatus.textContent = "Admin secret saved for this tab.";
+    await Promise.all([loadConversations(), loadConfig()]);
+  } catch (error) {
+    adminUnlocked = false;
+    setLockedState(true);
+    const message = error instanceof Error ? error.message : "Could not verify admin access.";
+    secretStatus.textContent = message;
+    sidebarSecretStatus.textContent = message;
+    throw error;
+  }
 }
 
 async function loadConversations() {
@@ -733,11 +775,15 @@ function renderUrgencyKeywords(keywords) {
 }
 
 async function adminFetch(url, options = {}) {
+  if (!adminUnlocked) {
+    throw new Error("Admin access is locked.");
+  }
+
   const response = await fetch(url, {
     ...options,
     headers: {
       "content-type": "application/json",
-      "x-admin-secret": sessionStorage.getItem(SECRET_STORAGE_KEY) ?? "",
+      ...buildAdminHeaders(),
       ...(options.headers ?? {}),
     },
   });
@@ -754,6 +800,20 @@ async function adminFetch(url, options = {}) {
   }
 
   return response;
+}
+
+function buildAdminHeaders() {
+  const headers = {};
+  const secret = (sidebarSecretInput.value || secretInput.value || "").trim();
+  if (secret) {
+    headers["x-admin-secret"] = secret;
+  }
+  return headers;
+}
+
+function setLockedState(locked) {
+  appShell.classList.toggle("is-locked", locked);
+  lockScreen.classList.toggle("is-hidden", !locked);
 }
 
 function renderBlock(title, items) {

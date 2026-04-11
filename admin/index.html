@@ -7,6 +7,25 @@
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
+    <div id="admin-lock-screen" class="lock-screen">
+      <section class="lock-card">
+        <p class="eyebrow">Internal Console</p>
+        <h1>BookSmart Admin</h1>
+        <p class="subtle">
+          This console stays locked until a valid admin secret is verified.
+        </p>
+        <label for="admin-secret" class="field">
+          <span>Admin secret</span>
+          <input id="admin-secret" type="password" placeholder="x-admin-secret" />
+        </label>
+        <div class="button-row">
+          <button id="save-secret" type="button">Unlock</button>
+        </div>
+        <p class="status-text" id="secret-status">Saved only in this browser tab.</p>
+      </section>
+    </div>
+
+    <div id="admin-app-shell" class="admin-app-shell is-locked">
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">
@@ -18,12 +37,12 @@
         </div>
 
         <section class="card auth-card">
-          <label for="admin-secret">Admin secret</label>
+          <label for="admin-secret-sidebar">Admin secret</label>
           <div class="secret-row">
-            <input id="admin-secret" type="password" placeholder="x-admin-secret" />
-            <button id="save-secret" type="button">Save</button>
+            <input id="admin-secret-sidebar" type="password" placeholder="x-admin-secret" />
+            <button id="save-secret-sidebar" type="button">Save</button>
           </div>
-          <p class="status-text" id="secret-status">Saved only in this browser tab.</p>
+          <p class="status-text" id="secret-status-sidebar">Saved only in this browser tab.</p>
         </section>
 
         <nav class="nav">
@@ -212,6 +231,7 @@
           </section>
         </section>
       </main>
+    </div>
     </div>
 
     <script type="module" src="/admin/app.js"></script>

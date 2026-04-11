@@ -25,6 +25,40 @@ body {
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
 }
 
+.admin-app-shell.is-locked {
+  filter: blur(10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(39, 31, 23, 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.lock-screen.is-hidden {
+  display: none;
+}
+
+.lock-card {
+  width: min(520px, 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(255, 250, 243, 0.96);
+  box-shadow: var(--shadow);
+}
+
+.lock-card h1 {
+  margin: 0;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 320px 1fr;

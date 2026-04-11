@@ -15,9 +15,33 @@
         <p class="hero-copy">
           Tell us a little about the project and BookSmart will guide the booking one step at a time.
         </p>
+        <div class="hero-actions">
+          <button id="chat-reset" class="site-button secondary" type="button">Start Over</button>
+        </div>
       </section>
 
       <section class="chat-card">
+        <section class="intake-card">
+          <h2>Optional contact details</h2>
+          <p class="hero-copy">
+            You can share these now so BookSmart can move faster once we get to booking.
+          </p>
+          <div class="contact-grid">
+            <label class="field">
+              <span>First name</span>
+              <input id="contact-first-name" type="text" placeholder="Jane" />
+            </label>
+            <label class="field">
+              <span>Phone</span>
+              <input id="contact-phone" type="tel" placeholder="555-111-2222" />
+            </label>
+            <label class="field field-wide">
+              <span>Email</span>
+              <input id="contact-email" type="email" placeholder="you@example.com" />
+            </label>
+          </div>
+        </section>
+
         <div id="chat-thread" class="chat-thread" aria-live="polite"></div>
         <form id="chat-form" class="chat-form">
           <label class="field">
