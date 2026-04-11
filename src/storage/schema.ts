@@ -177,3 +177,9 @@ create table if not exists handoff_events (
 create index if not exists handoff_events_conversation_id_idx
   on handoff_events (conversation_id, created_at);
 `;
+
+export const STORAGE_SCHEMA_STATEMENTS = STORAGE_SCHEMA_SQL
+  .split(/;\s*\n/g)
+  .map((statement) => statement.trim())
+  .filter(Boolean)
+  .map((statement) => `${statement};`);

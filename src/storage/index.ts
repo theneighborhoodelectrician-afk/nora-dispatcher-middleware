@@ -2,7 +2,7 @@ import { Pool } from "pg";
 import { AppConfig } from "../config.js";
 import { MemoryStorageAdapter } from "./memory.js";
 import { PostgresStorageAdapter } from "./postgres.js";
-import { STORAGE_SCHEMA_SQL } from "./schema.js";
+import { STORAGE_SCHEMA_STATEMENTS } from "./schema.js";
 import { StorageAdapter } from "./types.js";
 
 let cachedStorage: StorageAdapter | undefined;
@@ -55,7 +55,9 @@ export async function ensureStorageSchema(config: AppConfig): Promise<{
   });
 
   if (!schemaEnsured) {
-    await cachedPool.query(STORAGE_SCHEMA_SQL);
+    for (const statement of STORAGE_SCHEMA_STATEMENTS) {
+      await cachedPool.query(statement);
+    }
     schemaEnsured = true;
   }
 
