@@ -968,6 +968,7 @@ function deriveHandoffReason(outcome, handoffEvents = []) {
 function buildRoutingInsightItems(outcome, handoffEvents, slots) {
   const items = [];
   const handoffReason = deriveHandoffReason(outcome, handoffEvents);
+  const diagnostics = handoffEvents.at(-1)?.metadata?.diagnostics;
 
   if (outcome.handoffYesNo) {
     items.push(`Final handoff reason: ${handoffReason ?? "unknown"}`);
@@ -982,6 +983,15 @@ function buildRoutingInsightItems(outcome, handoffEvents, slots) {
   }
   if (outcome.finalBookingStatus === "human_escalation_required" && slots.length === 0) {
     items.push("Live availability did not resolve to bookable openings for this run.");
+  }
+  if (diagnostics?.requestZipCode) {
+    items.push(`Request ZIP: ${diagnostics.requestZipCode} (${diagnostics.requestCounty ?? "unknown county"}).`);
+  }
+  if (typeof diagnostics?.fetchedScheduledJobs === "number") {
+    items.push(`Fetched ${diagnostics.fetchedScheduledJobs} scheduled HCP jobs and produced ${diagnostics.candidateSlotCount ?? 0} candidate slots.`);
+  }
+  if (Array.isArray(diagnostics?.matchingTechnicians) && diagnostics.matchingTechnicians.length) {
+    items.push(`Technicians with candidate availability: ${diagnostics.matchingTechnicians.join(", ")}.`);
   }
   if (outcome.urgencyLevel === "urgent") {
     items.push("Urgency rules contributed to the routing decision.");

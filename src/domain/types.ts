@@ -119,6 +119,16 @@ export interface AvailabilityResponsePayload {
   service: ServiceProfile;
   slots: CandidateSlot[];
   escalationReason?: EscalationReason;
+  diagnostics?: {
+    requestZipCode: string;
+    requestCounty: County;
+    fetchedScheduledJobs: number;
+    matchingTechnicians: TechnicianName[];
+    candidateSlotCount: number;
+    returnedSlotCount: number;
+    preferredWindow?: "morning" | "afternoon";
+    serviceCategory: ServiceCategory;
+  };
   presentation: ConversationPresentation;
 }
 

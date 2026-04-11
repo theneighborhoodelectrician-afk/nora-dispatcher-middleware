@@ -23,6 +23,7 @@ export async function getAvailability(
       service: decision.service,
       slots: [],
       escalationReason: "emergency_keyword_detected",
+      diagnostics: decision.diagnostics,
       presentation: buildAvailabilityPresentation({
         status: "human_escalation_required",
         slots: [],
@@ -40,6 +41,7 @@ export async function getAvailability(
       service: decision.service,
       slots: [],
       escalationReason: "outside_service_area",
+      diagnostics: decision.diagnostics,
       presentation: buildAvailabilityPresentation({
         status: "human_escalation_required",
         slots: [],
@@ -57,6 +59,7 @@ export async function getAvailability(
       service: decision.service,
       slots: [],
       escalationReason: "no_viable_availability",
+      diagnostics: decision.diagnostics,
       presentation: buildAvailabilityPresentation({
         status: "human_escalation_required",
         slots: [],
@@ -72,6 +75,7 @@ export async function getAvailability(
       "Here are the three best options based on technician skill, contiguous job time, and route efficiency.",
     service: decision.service,
     slots: decision.slots,
+    diagnostics: decision.diagnostics,
     presentation: buildAvailabilityPresentation({
       status: "slots_available",
       slots: decision.slots,
@@ -88,6 +92,7 @@ export async function evaluateAvailability(
   intelligence: ReturnType<typeof analyzeRequest>;
   slots: AvailabilityResponsePayload["slots"];
   allSlots: AvailabilityResponsePayload["slots"];
+  diagnostics: NonNullable<AvailabilityResponsePayload["diagnostics"]>;
 }> {
   const service = classifyService(customerRequest.requestedService);
   const intelligence = analyzeRequest(customerRequest, service);
@@ -110,5 +115,15 @@ export async function evaluateAvailability(
     intelligence,
     slots,
     allSlots,
+    diagnostics: {
+      requestZipCode: customerRequest.zipCode,
+      requestCounty: detectCounty(customerRequest.zipCode),
+      fetchedScheduledJobs: scheduledJobs.length,
+      matchingTechnicians: [...new Set(allSlots.map((slot) => slot.technician))],
+      candidateSlotCount: allSlots.length,
+      returnedSlotCount: slots.length,
+      preferredWindow: customerRequest.preferredWindow,
+      serviceCategory: service.category,
+    },
   };
 }

@@ -578,6 +578,21 @@ export async function handleChatMessage(
     toolCallSummary: `Checking live availability for ${state.customer.requestedService}.`,
   });
   const availability = await getAvailabilityTool(toCustomerRequest(state.customer), config, bookSmartConfig);
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "tool",
+    timestamp: now,
+    toolName: "get_availability_result",
+    toolCallSummary:
+      availability.status === "slots_available"
+        ? `Availability returned ${availability.presentation.options?.length ?? 0} slot options.`
+        : `Availability escalated with ${availability.escalationReason ?? availability.status}.`,
+    metadata: {
+      status: availability.status,
+      escalationReason: availability.escalationReason,
+      diagnostics: availability.diagnostics,
+    },
+  });
   state.lastOfferedOptions = availability.presentation.options;
 
   if (availability.status === "slots_available" && availability.presentation.options?.length) {
@@ -598,14 +613,17 @@ export async function handleChatMessage(
 
   state.stage = "human_handoff";
   state.bookingStatus = "handoff";
-  state.analytics.lastHandoffReason = availability.status;
+  state.analytics.lastHandoffReason = availability.escalationReason ?? availability.status;
   await storage.appendHandoffEvent({
     conversationId: state.sessionId,
-    reason: availability.status,
+    reason: availability.escalationReason ?? availability.status,
     timestamp: now,
+    metadata: {
+      diagnostics: availability.diagnostics,
+    },
   });
   await recordStageOnce(storage, state, "escalated", now, {
-    reason: availability.status,
+    reason: availability.escalationReason ?? availability.status,
   });
   return persistReply(storage, state, {
     success: true,
@@ -738,7 +756,7 @@ function normalizeText(value: string | undefined): string {
 }
 
 function extractZipCode(text: string): string | undefined {
-  return text.match(/\b\d{5}\b/)?.[0];
+  return text.match(/\b\d{5}(?:-\d{4})?\b\s*$/)?.[0]?.slice(0, 5);
 }
 
 function extractPhoneNumber(text: string): string | undefined {
