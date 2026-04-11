@@ -6,6 +6,7 @@ import { getAvailability } from "../src/services/availability.js";
 
 const config: AppConfig = {
   environment: "test",
+  contact: {},
   scheduling: {
     timezone: "America/Detroit",
     openingHour: 9,

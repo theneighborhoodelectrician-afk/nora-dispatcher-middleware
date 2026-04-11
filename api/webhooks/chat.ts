@@ -65,7 +65,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    const reply = await handleChatMessage(req.body, storage, config);
+    const body = {
+      ...((req.body ?? {}) as Record<string, unknown>),
+      leadSource:
+        typeof req.body?.leadSource === "string" && req.body.leadSource.trim().length
+          ? req.body.leadSource
+          : typeof req.body?.source === "string" && req.body.source.trim().length
+            ? req.body.source
+            : "blooio",
+      source:
+        typeof req.body?.source === "string" && req.body.source.trim().length
+          ? req.body.source
+          : "blooio",
+    };
+
+    const reply = await handleChatMessage(body, storage, config);
     await storage.storeIdempotentResult(webhookId, reply);
     await storage.logWebhookEvent({
       webhookId,

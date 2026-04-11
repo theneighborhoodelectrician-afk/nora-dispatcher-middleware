@@ -4,6 +4,7 @@ import { ensureStorageSchema, getStorageMode, prepareStorage } from "../src/stor
 
 const baseConfig: AppConfig = {
   environment: "test",
+  contact: {},
   scheduling: {
     timezone: "America/Detroit",
     openingHour: 9,

@@ -12,5 +12,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse):
     storageMode: getStorageMode(config),
     openAiEnabled: config.openai.enabled,
     adminProtected: Boolean(config.admin.secret),
+    humanHandoffPhone: config.contact.humanHandoffPhone ?? null,
+    humanHandoffHref: config.contact.humanHandoffHref ?? null,
   });
 }

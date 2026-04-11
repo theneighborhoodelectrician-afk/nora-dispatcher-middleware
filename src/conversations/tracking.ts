@@ -17,6 +17,7 @@ export function normalizeLeadSource(value: string | undefined): LeadSourceCode {
   const normalized = value?.trim().toLowerCase();
   switch (normalized) {
     case "website":
+    case "blooio":
     case "qr_code":
     case "lsa":
     case "gbp":

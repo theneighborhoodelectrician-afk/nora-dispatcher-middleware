@@ -34,9 +34,17 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
   const nestedMessage = asRecord(body.message);
   const nestedContact = asRecord(body.contact);
   const nestedCustomer = asRecord(body.customer);
+  const contactPhone = stringValue(nestedContact.phone);
+  const customerPhone = stringValue(nestedCustomer.phone);
 
   return {
-    sessionId: stringValue(body.sessionId) ?? stringValue(body.conversationId) ?? stringValue(body.threadId) ?? stringValue(nestedContact.id),
+    sessionId:
+      stringValue(body.sessionId) ??
+      stringValue(body.conversationId) ??
+      stringValue(body.threadId) ??
+      stringValue(nestedContact.id) ??
+      normalizePhoneSessionId(contactPhone) ??
+      normalizePhoneSessionId(customerPhone),
     messageId: stringValue(body.messageId) ?? stringValue(nestedMessage.id),
     leadSource: stringValue(body.leadSource) ?? stringValue(body.source),
     text: stringValue(body.text) ?? stringValue(body.body) ?? stringValue(nestedMessage.text) ?? stringValue(nestedMessage.body),
@@ -55,7 +63,7 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
     customer: {
       firstName: stringValue(nestedCustomer.firstName),
       lastName: stringValue(nestedCustomer.lastName),
-      phone: stringValue(nestedCustomer.phone),
+      phone: customerPhone,
       email: stringValue(nestedCustomer.email),
       address: stringValue(nestedCustomer.address),
       city: stringValue(nestedCustomer.city),
@@ -98,4 +106,17 @@ function attachmentArrayValue(
     .filter((item) => item.type || item.url);
 
   return items.length ? items : undefined;
+}
+
+function normalizePhoneSessionId(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return undefined;
+  }
+
+  return `phone:${digits.slice(-10)}`;
 }

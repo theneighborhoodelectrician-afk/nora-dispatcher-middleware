@@ -7,6 +7,10 @@ import { MemoryStorageAdapter } from "../src/storage/memory.js";
 
 const config: AppConfig = {
   environment: "test",
+  contact: {
+    humanHandoffPhone: "586-489-1504",
+    humanHandoffHref: "tel:+15864891504",
+  },
   scheduling: {
     timezone: "America/Detroit",
     openingHour: 9,
@@ -446,6 +450,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("human_handoff");
     expect(reply.handoffRequired).toBe(true);
     expect(reply.replyText.toLowerCase()).toContain("urgent");
+    expect(reply.replyText).toContain("586-489-1504");
   });
 
   it("hands off outside-area cities for manual review", async () => {
@@ -472,6 +477,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("human_handoff");
     expect(reply.handoffRequired).toBe(true);
     expect(reply.replyText.toLowerCase()).toContain("manual review");
+    expect(reply.replyText).toContain("586-489-1504");
   });
 
   it("uses stored BookSmart config to change routing behavior", async () => {

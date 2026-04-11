@@ -25,6 +25,9 @@ function createResponseRecorder() {
 
 describe("public runtime api", () => {
   it("returns basic runtime information for public pages", async () => {
+    const originalPhone = process.env.HUMAN_HANDOFF_PHONE;
+    process.env.HUMAN_HANDOFF_PHONE = "586-489-1504";
+
     const req = {
       method: "GET",
       headers: {},
@@ -32,14 +35,24 @@ describe("public runtime api", () => {
     };
 
     const res = createResponseRecorder();
-    await handler(req as never, res as never);
+    try {
+      await handler(req as never, res as never);
 
-    expect(res.statusCode).toBe(200);
-    const payload = JSON.parse(res.body);
-    expect(payload.success).toBe(true);
-    expect(typeof payload.environment).toBe("string");
-    expect(typeof payload.storageMode).toBe("string");
-    expect(typeof payload.openAiEnabled).toBe("boolean");
-    expect(typeof payload.adminProtected).toBe("boolean");
+      expect(res.statusCode).toBe(200);
+      const payload = JSON.parse(res.body);
+      expect(payload.success).toBe(true);
+      expect(typeof payload.environment).toBe("string");
+      expect(typeof payload.storageMode).toBe("string");
+      expect(typeof payload.openAiEnabled).toBe("boolean");
+      expect(typeof payload.adminProtected).toBe("boolean");
+      expect(payload.humanHandoffPhone).toBe("586-489-1504");
+      expect(payload.humanHandoffHref).toBe("tel:+15864891504");
+    } finally {
+      if (originalPhone === undefined) {
+        delete process.env.HUMAN_HANDOFF_PHONE;
+      } else {
+        process.env.HUMAN_HANDOFF_PHONE = originalPhone;
+      }
+    }
   });
 });

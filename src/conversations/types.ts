@@ -1,5 +1,6 @@
 export type LeadSourceCode =
   | "website"
+  | "blooio"
   | "qr_code"
   | "lsa"
   | "gbp"

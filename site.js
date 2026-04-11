@@ -1,4 +1,12 @@
 const environmentBadge = document.getElementById("environment-badge");
+const handoffLinks = [
+  document.getElementById("human-handoff-link-home"),
+  document.getElementById("human-handoff-link-book"),
+].filter(Boolean);
+const handoffCopyBlocks = [
+  document.getElementById("human-handoff-copy-home"),
+  document.getElementById("human-handoff-copy-book"),
+].filter(Boolean);
 
 boot();
 
@@ -17,6 +25,7 @@ async function boot() {
     environmentBadge.textContent = formatEnvironmentLabel(payload.environment);
     environmentBadge.dataset.environment = String(payload.environment || "unknown");
     environmentBadge.hidden = false;
+    applyHumanHandoffContact(payload);
   } catch {
     environmentBadge.hidden = true;
   }
@@ -35,4 +44,21 @@ function formatEnvironmentLabel(environment) {
     default:
       return environment ? String(environment) : "Unknown";
   }
+}
+
+function applyHumanHandoffContact(payload) {
+  if (!payload || !payload.humanHandoffPhone || !payload.humanHandoffHref) {
+    return;
+  }
+
+  handoffLinks.forEach((link) => {
+    link.href = payload.humanHandoffHref;
+    link.textContent = `Call or Text ${payload.humanHandoffPhone}`;
+    link.hidden = false;
+  });
+
+  handoffCopyBlocks.forEach((block) => {
+    block.textContent = `Prefer a human? Call or text ${payload.humanHandoffPhone}.`;
+    block.hidden = false;
+  });
 }

@@ -271,7 +271,7 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: bookSmartConfig.conversation.handoffMessage,
+      replyText: withHumanHandoffContact(bookSmartConfig.conversation.handoffMessage, config),
       stage: state.stage,
       handoffRequired: true,
     }, now);
@@ -324,7 +324,10 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "Thanks. That area needs a quick manual review from our team before we book it.",
+      replyText: withHumanHandoffContact(
+        "Thanks. That area needs a quick manual review from our team before we book it.",
+        config,
+      ),
       stage: state.stage,
       handoffRequired: true,
     }, now);
@@ -370,7 +373,10 @@ export async function handleChatMessage(
         return persistReply(storage, state, {
           success: true,
           sessionId,
-          replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+          replyText: withHumanHandoffContact(
+            "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+            config,
+          ),
           stage: state.stage,
           handoffRequired: true,
         }, now);
@@ -424,7 +430,10 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+      replyText: withHumanHandoffContact(
+        "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+        config,
+      ),
       stage: state.stage,
       handoffRequired: true,
     }, now);
@@ -849,7 +858,7 @@ async function tryHandleChatMessageWithOpenAi(
       },
     });
 
-    const enforcedReply = await enforceBookSmartGuards(storage, state, bookSmartConfig, sessionId, timestamp);
+    const enforcedReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, timestamp);
     if (enforcedReply) {
       return enforcedReply;
     }
@@ -1333,6 +1342,7 @@ function createOpenAiTools(
 async function enforceBookSmartGuards(
   storage: StorageAdapter,
   state: ChatSessionState,
+  config: AppConfig,
   bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
   sessionId: string,
   timestamp: number,
@@ -1356,7 +1366,10 @@ async function enforceBookSmartGuards(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+      replyText: withHumanHandoffContact(
+        "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+        config,
+      ),
       stage: state.stage,
       handoffRequired: true,
     }, timestamp);
@@ -1382,7 +1395,10 @@ async function enforceBookSmartGuards(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "Thanks. That area needs a quick manual review from our team before we book it.",
+        replyText: withHumanHandoffContact(
+          "Thanks. That area needs a quick manual review from our team before we book it.",
+          config,
+        ),
         stage: state.stage,
         handoffRequired: true,
       }, timestamp);
@@ -1612,4 +1628,13 @@ function summarizeOpenAiDecisionTrace(toolCalls: string[]): string {
   }
 
   return `OpenAI used tools: ${toolCalls.join(", ")}.`;
+}
+
+function withHumanHandoffContact(replyText: string, config: AppConfig): string {
+  const phone = config.contact.humanHandoffPhone;
+  if (!phone) {
+    return replyText;
+  }
+
+  return `${replyText} You can call or text ${phone} now if you’d rather talk to a person.`;
 }

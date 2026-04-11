@@ -163,10 +163,16 @@ h2 {
 .feature-card p,
 .chat-status,
 .back-link,
-.field span {
+.field span,
+.contact-callout {
   color: var(--muted);
   font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
   line-height: 1.55;
+}
+
+.contact-callout {
+  margin: 16px 0 0;
+  font-size: 0.98rem;
 }
 
 .chat-card {

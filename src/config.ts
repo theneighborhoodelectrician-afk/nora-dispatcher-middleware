@@ -33,6 +33,10 @@ function readBoolean(name: string, fallback: boolean): boolean {
 
 export interface AppConfig {
   environment: string;
+  contact: {
+    humanHandoffPhone?: string;
+    humanHandoffHref?: string;
+  };
   scheduling: SchedulingSettings;
   openai: {
     apiKey?: string;
@@ -67,8 +71,14 @@ export interface AppConfig {
 }
 
 export function getConfig(): AppConfig {
+  const humanHandoffPhone = normalizeDisplayPhone(process.env.HUMAN_HANDOFF_PHONE);
+
   return {
     environment: process.env.NODE_ENV ?? "development",
+    contact: {
+      humanHandoffPhone,
+      humanHandoffHref: humanHandoffPhone ? toTelHref(humanHandoffPhone) : undefined,
+    },
     scheduling: {
       timezone: process.env.DEFAULT_TIMEZONE ?? "America/Detroit",
       openingHour: readNumber("OPENING_HOUR", 9),
@@ -124,4 +134,22 @@ function loadEnvFiles(): void {
       });
     }
   }
+}
+
+function normalizeDisplayPhone(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return undefined;
+  }
+
+  const normalized = digits.slice(-10);
+  return `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6)}`;
+}
+
+function toTelHref(value: string): string {
+  return `tel:+1${value.replace(/\D/g, "")}`;
 }

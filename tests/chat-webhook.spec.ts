@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import handler from "../api/webhooks/chat.js";
+import { getConfig } from "../src/config.js";
+import { getStorageAdapter } from "../src/storage/index.js";
 
 function createResponseRecorder() {
   const response = {
@@ -44,5 +46,107 @@ describe("chat webhook", () => {
     expect(firstRes.statusCode).toBe(200);
     expect(secondRes.statusCode).toBe(200);
     expect(secondRes.body).toBe(firstRes.body);
+  });
+
+  it("routes Blooio webhook conversations through the shared lead-first tracking flow", async () => {
+    const originalToken = process.env.HCP_API_TOKEN;
+    delete process.env.HCP_API_TOKEN;
+
+    const sessionId = "blooio-lead-flow-1";
+    const messages = [
+      {
+        messageId: "blooio-msg-1",
+        text: "Hello",
+        contact: {
+          id: "blooio-contact-1",
+          phone: "586-555-0100",
+        },
+      },
+      {
+        messageId: "blooio-msg-2",
+        text: "Sterling Heights",
+      },
+      {
+        messageId: "blooio-msg-3",
+        text: "I need help with an EV charger install",
+      },
+      {
+        messageId: "blooio-msg-4",
+        text: "123 Main St, Sterling Heights, MI 48313",
+      },
+      {
+        messageId: "blooio-msg-5",
+        text: "Jane",
+      },
+      {
+        messageId: "blooio-msg-6",
+        text: "Afternoon works best",
+      },
+    ];
+
+    let lastPayload: Record<string, unknown> | undefined;
+
+    try {
+      for (const message of messages) {
+        const req = {
+          method: "POST",
+          headers: {},
+          body: {
+            sessionId,
+            ...message,
+          },
+        };
+        const res = createResponseRecorder();
+        await handler(req as never, res as never);
+        expect(res.statusCode).toBe(200);
+        lastPayload = JSON.parse(res.body);
+      }
+    } finally {
+      if (originalToken === undefined) {
+        delete process.env.HCP_API_TOKEN;
+      } else {
+        process.env.HCP_API_TOKEN = originalToken;
+      }
+    }
+
+    expect(lastPayload?.stage).toBe("lead_submitted");
+    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("dispatch team");
+
+    const storage = getStorageAdapter(getConfig());
+    const conversation = await storage.getConversation(sessionId);
+    const outcome = await storage.getConversationOutcome(sessionId);
+    const bookingEvents = await storage.listBookingEvents(sessionId);
+    const leadSource = await storage.getLeadSource("blooio");
+
+    expect(conversation?.leadSource).toBe("blooio");
+    expect(outcome?.finalBookingStatus).toBe("lead_submitted");
+    expect(outcome?.bookedYesNo).toBe(true);
+    expect(bookingEvents).toHaveLength(1);
+    expect(leadSource?.code).toBe("blooio");
+  });
+
+  it("falls back to a phone-based session id when Blooio does not send one", async () => {
+    const req = {
+      method: "POST",
+      headers: {},
+      body: {
+        messageId: "blooio-msg-phone-session",
+        text: "Hello",
+        contact: {
+          phone: "(586) 555-0142",
+        },
+      },
+    };
+
+    const res = createResponseRecorder();
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body);
+    expect(payload.sessionId).toBe("phone:5865550142");
+
+    const storage = getStorageAdapter(getConfig());
+    const conversation = await storage.getConversation("phone:5865550142");
+    expect(conversation?.leadSource).toBe("blooio");
   });
 });
