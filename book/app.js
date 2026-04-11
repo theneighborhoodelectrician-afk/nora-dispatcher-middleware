@@ -241,12 +241,11 @@ function readLeadSource() {
 }
 
 function buildContactPayload() {
-  saveContactFields();
-
+  const stored = loadSavedContactFields();
   const contact = {
-    firstName: firstNameInput.value.trim(),
-    phone: phoneInput.value.trim(),
-    email: emailInput.value.trim(),
+    firstName: stored.firstName ?? "",
+    phone: stored.phone ?? "",
+    email: stored.email ?? "",
   };
 
   return Object.fromEntries(Object.entries(contact).filter(([, value]) => value));
@@ -264,16 +263,10 @@ function saveContactFields() {
 }
 
 function hydrateContactFields() {
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(CONTACT_STORAGE_KEY) ?? "{}");
-    firstNameInput.value = stored.firstName ?? "";
-    phoneInput.value = stored.phone ?? "";
-    emailInput.value = stored.email ?? "";
-  } catch {
-    firstNameInput.value = "";
-    phoneInput.value = "";
-    emailInput.value = "";
-  }
+  const stored = loadSavedContactFields();
+  firstNameInput.value = stored.firstName ?? "";
+  phoneInput.value = stored.phone ?? "";
+  emailInput.value = stored.email ?? "";
 }
 
 function setBusy(isBusy, message) {
@@ -350,4 +343,12 @@ function buildTranscriptText() {
       return `${speaker}: ${entry.text}`;
     })
     .join("\n\n");
+}
+
+function loadSavedContactFields() {
+  try {
+    return JSON.parse(sessionStorage.getItem(CONTACT_STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
 }

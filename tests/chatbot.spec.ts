@@ -148,7 +148,8 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
     expect(reply.replyText.toLowerCase()).toContain("dispatch");
-    expect(reply.replyText.toLowerCase()).toContain("call or text");
+    expect(reply.replyText.toLowerCase()).toContain("team member");
+    expect(reply.replyText.toLowerCase()).toContain("asap");
   });
 
   it("submits a lead through the OpenAI runtime path instead of offering slots", async () => {
@@ -210,6 +211,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
     expect(reply.replyText.toLowerCase()).toContain("dispatch");
+    expect(reply.replyText.toLowerCase()).toContain("team member");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -362,6 +364,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
     expect(reply.replyText.toLowerCase()).toContain("dispatch");
+    expect(reply.replyText.toLowerCase()).toContain("team member");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -543,6 +546,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
     expect(reply.replyText.toLowerCase()).toContain("dispatch");
+    expect(reply.replyText.toLowerCase()).toContain("team member");
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {

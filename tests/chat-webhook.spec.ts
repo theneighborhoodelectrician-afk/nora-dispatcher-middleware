@@ -115,7 +115,8 @@ describe("chat webhook", () => {
 
     expect(lastPayload?.stage).toBe("lead_submitted");
     expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("dispatch");
-    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("call or text");
+    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("team member");
+    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("asap");
 
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation(sessionId);

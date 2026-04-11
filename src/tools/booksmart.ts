@@ -210,7 +210,7 @@ export async function createLeadTool(
     message: "Lead submitted.",
     presentation: {
       replyText:
-        "Perfect, I’ve got this over to dispatch. We’ll call or text you soon with the next step.",
+        "Perfect, I’ve got this over to dispatch. A team member will be reaching out ASAP.",
       followUpPrompt:
         "Confirm that the request is in and the team will follow up with the appointment time.",
     },
