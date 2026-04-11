@@ -12,7 +12,8 @@ export default async function handler(_req: VercelRequest, res: VercelResponse):
     try {
       const result = await prepareStorage(config);
       schemaReady = result.schemaReady;
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown storage error";
       sendJson(res, 503, {
         success: false,
         service: "nora-dispatcher-middleware",
@@ -21,6 +22,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse):
           mode: storageMode,
           schemaReady: false,
           autoInit: config.storage.autoInit,
+          error: message,
         },
       });
       return;
