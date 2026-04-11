@@ -3,6 +3,8 @@ const form = document.getElementById("chat-form");
 const input = document.getElementById("chat-input");
 const sendButton = document.getElementById("chat-send");
 const resetButton = document.getElementById("chat-reset");
+const copyButton = document.getElementById("chat-copy");
+const downloadButton = document.getElementById("chat-download");
 const statusText = document.getElementById("chat-status");
 const firstNameInput = document.getElementById("contact-first-name");
 const phoneInput = document.getElementById("contact-phone");
@@ -12,6 +14,8 @@ const SESSION_STORAGE_KEY = "booksmart_public_chat_session";
 const HISTORY_STORAGE_KEY = "booksmart_public_chat_history";
 const CONTACT_STORAGE_KEY = "booksmart_public_chat_contact";
 
+let isSending = false;
+
 boot();
 
 function boot() {
@@ -20,6 +24,12 @@ function boot() {
   renderHistory(loadHistory());
   form.addEventListener("submit", onSubmit);
   resetButton.addEventListener("click", resetConversation);
+  copyButton.addEventListener("click", () => {
+    copyTranscript().catch(() => {
+      setBusy(false, "Could not copy the transcript.");
+    });
+  });
+  downloadButton.addEventListener("click", downloadTranscript);
   [firstNameInput, phoneInput, emailInput].forEach((element) => {
     element.addEventListener("input", saveContactFields);
   });
@@ -31,13 +41,15 @@ async function onSubmit(event) {
 }
 
 async function sendMessage(text) {
-  if (!text) {
+  if (!text || isSending) {
     return;
   }
 
+  isSending = true;
   appendHistoryEntry({ role: "user", text });
   input.value = "";
-  setBusy(true, "Sending…");
+  appendPendingEntry();
+  setBusy(true, "BookSmart is checking the next step…");
 
   try {
     const response = await fetch("/api/public/chat", {
@@ -58,7 +70,7 @@ async function sendMessage(text) {
       throw new Error(payload.message || "BookSmart could not process that message.");
     }
 
-    appendHistoryEntry({
+    replacePendingEntry({
       role: "assistant",
       text: payload.replyText,
       kind: payload.bookingId ? "booked" : payload.handoffRequired ? "handoff" : "reply",
@@ -72,16 +84,18 @@ async function sendMessage(text) {
       payload.bookingId
         ? `Booked successfully: ${payload.bookingId}`
         : payload.handoffRequired
-          ? "A team member may need to review this request."
+          ? "BookSmart flagged this for team review."
           : "Reply received.",
     );
   } catch (error) {
-    appendHistoryEntry({
+    replacePendingEntry({
       role: "assistant",
       text: "Something went wrong while sending that. Please try again.",
       kind: "error",
     });
     setBusy(false, error instanceof Error ? error.message : "Something went wrong.");
+  } finally {
+    isSending = false;
   }
 }
 
@@ -90,12 +104,19 @@ function renderHistory(history) {
 
   history.forEach((entry, index) => {
     const item = document.createElement("article");
-    item.className = `chat-bubble ${entry.role}${entry.kind ? ` ${entry.kind}` : ""}`;
+    item.className = `chat-bubble ${entry.role}${entry.kind ? ` ${entry.kind}` : ""}${entry.pending ? " pending" : ""}`;
 
     const text = document.createElement("div");
     text.className = "chat-bubble-text";
     text.textContent = entry.text;
     item.appendChild(text);
+
+    if (entry.pending) {
+      const loading = document.createElement("div");
+      loading.className = "chat-loading";
+      loading.innerHTML = `<span></span><span></span><span></span>`;
+      item.appendChild(loading);
+    }
 
     if (entry.role === "assistant" && Array.isArray(entry.options) && entry.options.length) {
       const optionGroup = document.createElement("div");
@@ -106,7 +127,11 @@ function renderHistory(history) {
         optionButton.type = "button";
         optionButton.className = "option-button";
         optionButton.textContent = option.label;
+        optionButton.disabled = Boolean(entry.optionsUsed) || isSending;
         optionButton.addEventListener("click", () => {
+          if (isSending) {
+            return;
+          }
           markOptionGroupUsed(index);
           sendMessage(optionIndex === 0 ? "first one" : optionIndex === 1 ? "second one" : option.label).catch(() => undefined);
         });
@@ -115,9 +140,6 @@ function renderHistory(history) {
 
       if (entry.optionsUsed) {
         optionGroup.classList.add("used");
-        optionGroup.querySelectorAll("button").forEach((button) => {
-          button.disabled = true;
-        });
       }
 
       item.appendChild(optionGroup);
@@ -133,7 +155,7 @@ function renderHistory(history) {
     if (entry.role === "assistant" && entry.handoffRequired) {
       const tag = document.createElement("div");
       tag.className = "chat-note warning";
-      tag.textContent = "This request may need team review.";
+      tag.textContent = "Our team will review this request before confirming the next step.";
       item.appendChild(tag);
     }
 
@@ -146,6 +168,27 @@ function renderHistory(history) {
 function appendHistoryEntry(entry) {
   const history = loadHistory();
   history.push(entry);
+  saveHistory(history);
+  renderHistory(history);
+}
+
+function appendPendingEntry() {
+  appendHistoryEntry({
+    role: "assistant",
+    text: "Checking that now…",
+    kind: "pending",
+    pending: true,
+  });
+}
+
+function replacePendingEntry(entry) {
+  const history = loadHistory();
+  const index = history.findIndex((item) => item.pending);
+  if (index >= 0) {
+    history[index] = entry;
+  } else {
+    history.push(entry);
+  }
   saveHistory(history);
   renderHistory(history);
 }
@@ -225,12 +268,18 @@ function hydrateContactFields() {
 
 function setBusy(isBusy, message) {
   resetButton.disabled = isBusy;
+  copyButton.disabled = isBusy;
+  downloadButton.disabled = isBusy;
   sendButton.disabled = isBusy;
   input.disabled = isBusy;
   statusText.textContent = message;
 }
 
 function resetConversation() {
+  if (isSending) {
+    return;
+  }
+
   const confirmed = window.confirm("Start over and clear this conversation in this browser tab?");
   if (!confirmed) {
     return;
@@ -261,4 +310,34 @@ function ensureSeededHistory() {
       kind: "prompt",
     },
   ]);
+}
+
+async function copyTranscript() {
+  const transcript = buildTranscriptText();
+  await navigator.clipboard.writeText(transcript);
+  setBusy(false, "Transcript copied.");
+}
+
+function downloadTranscript() {
+  const transcript = buildTranscriptText();
+  const blob = new Blob([transcript], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `booksmart-transcript-${getSessionId()}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setBusy(false, "Transcript downloaded.");
+}
+
+function buildTranscriptText() {
+  return loadHistory()
+    .filter((entry) => !entry.pending)
+    .map((entry) => {
+      const speaker = entry.role === "assistant" ? "BookSmart" : "Customer";
+      return `${speaker}: ${entry.text}`;
+    })
+    .join("\n\n");
 }

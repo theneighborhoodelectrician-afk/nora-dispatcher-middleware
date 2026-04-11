@@ -278,18 +278,25 @@ npm run deploy:check
    - `HCP_CREATE_JOB_PATH=/jobs`
    - `HCP_CREATE_ESTIMATE_PATH=/public/v1/estimates`
    - `GHL_WEBHOOK_SECRET`
+   - `ADMIN_SECRET`
    - `POSTGRES_URL`
+   - `OPENAI_API_KEY` if enabling the optional AI runtime
 2. Run `npm run deploy:check` locally against the same env values.
 3. If using Postgres, run `npm run db:init` or let `AUTO_INIT_STORAGE=true` bootstrap the schema.
 4. Deploy and open `GET /api/health`.
 5. Confirm the health response shows:
    - `success: true`
    - `storage.mode: "postgres"` for production
-6. Point GoHighLevel webhooks at:
+6. Open these routes manually after deploy:
+   - `/`
+   - `/book/`
+   - `/admin/`
+7. Confirm `/admin/` shows the lock screen before a valid secret is entered.
+8. Point GoHighLevel webhooks at:
    - `/api/webhooks/availability`
    - `/api/webhooks/booking`
    - `/api/webhooks/chat` for Blooio or another text channel
-7. Send a test availability webhook first before enabling live booking traffic.
+9. Send a test availability webhook first before enabling live booking traffic.
 
 ## Chatbot webhook
 

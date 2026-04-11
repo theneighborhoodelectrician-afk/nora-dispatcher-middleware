@@ -24,6 +24,15 @@ async function main(): Promise<void> {
   if (!config.ghl.webhookSecret) {
     warnings.push("GHL_WEBHOOK_SECRET is not set yet");
   }
+  if (!config.admin.secret) {
+    warnings.push("ADMIN_SECRET is not set; /admin will not be protected by a shared secret");
+  }
+  if (config.openai.enabled && !config.openai.apiKey) {
+    issues.push("OPENAI_RESPONSES_ENABLED is true but OPENAI_API_KEY is missing");
+  }
+  if (config.openai.enabled) {
+    warnings.push(`OpenAI runtime enabled with model ${config.openai.model}`);
+  }
 
   const storageMode = getStorageMode(config);
   if (storageMode === "memory") {
@@ -48,6 +57,10 @@ async function main(): Promise<void> {
     autoInitStorage: config.storage.autoInit,
     timezone: config.scheduling.timezone,
     slotCount: config.scheduling.defaultSlotCount,
+    publicRoutes: ["/", "/book/", "/admin/"],
+    adminSecretConfigured: Boolean(config.admin.secret),
+    openAiEnabled: config.openai.enabled,
+    openAiModel: config.openai.model,
   }, null, 2));
   console.log("");
 
@@ -79,6 +92,11 @@ async function main(): Promise<void> {
   }
 
   console.log("Status: ready to continue deployment hardening");
+  console.log("Next live checks:");
+  console.log("- Open GET /api/health");
+  console.log("- Open /");
+  console.log("- Open /book/");
+  console.log("- Open /admin/ and verify the lock screen");
 }
 
 main().catch((error) => {
