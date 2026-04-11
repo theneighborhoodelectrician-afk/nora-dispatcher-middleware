@@ -337,7 +337,7 @@ export async function handleChatMessage(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        "Thanks. That area needs a quick manual review from our team before we book it.",
+        personalizeReply(state, "Got it. That area needs a quick manual review first."),
         config,
       ),
       stage: state.stage,
@@ -386,7 +386,7 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: withHumanHandoffContact(
-            "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
             config,
           ),
           stage: state.stage,
@@ -397,7 +397,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What’s the service address?",
+        replyText: askForAddress(state),
         stage: state.stage,
       }, now);
     } else {
@@ -405,7 +405,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What kind of electrical project do you need help with?",
+        replyText: askForServiceType(state),
         stage: state.stage,
       }, now);
     }
@@ -443,7 +443,7 @@ export async function handleChatMessage(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+        personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
         config,
       ),
       stage: state.stage,
@@ -463,7 +463,7 @@ export async function handleChatMessage(
         return persistReply(storage, state, {
           success: true,
           sessionId,
-          replyText: "What zip code is the project in?",
+          replyText: askForZip(state),
           stage: state.stage,
         }, now);
       }
@@ -472,7 +472,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What’s your first name?",
+        replyText: askForFirstName(state),
         stage: state.stage,
       }, now);
     } else {
@@ -480,7 +480,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What’s the service address?",
+        replyText: askForAddress(state),
         stage: state.stage,
       }, now);
     }
@@ -493,7 +493,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What zip code is the project in?",
+        replyText: askForZip(state),
         stage: state.stage,
       }, now);
     }
@@ -505,7 +505,7 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "What’s your first name?",
+      replyText: askForFirstName(state),
       stage: state.stage,
     }, now);
   }
@@ -518,7 +518,7 @@ export async function handleChatMessage(
         return persistReply(storage, state, {
           success: true,
           sessionId,
-          replyText: "What’s the best phone number for the booking?",
+          replyText: askForPhone(state),
           stage: state.stage,
         }, now);
       }
@@ -530,7 +530,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "Do you prefer a morning or afternoon appointment?",
+        replyText: askForPreferredWindow(state),
         stage: state.stage,
       }, now);
     } else {
@@ -538,7 +538,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What’s your first name?",
+        replyText: askForFirstName(state),
         stage: state.stage,
       }, now);
     }
@@ -551,7 +551,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "What’s the best phone number for the booking?",
+        replyText: askForPhone(state),
         stage: state.stage,
       }, now);
     }
@@ -563,7 +563,7 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "Do you prefer a morning or afternoon appointment?",
+      replyText: askForPreferredWindow(state),
       stage: state.stage,
     }, now);
   }
@@ -582,8 +582,8 @@ export async function handleChatMessage(
         });
       }
       const reply = photoPrompt
-        ? `Do you prefer a morning or afternoon appointment? ${photoPrompt}`
-        : "Do you prefer a morning or afternoon appointment?";
+        ? `${askForPreferredWindow(state)} ${photoPrompt}`
+        : askForPreferredWindow(state);
       return persistReply(storage, state, {
         success: true,
         sessionId,
@@ -1150,7 +1150,7 @@ async function enforceBookSmartGuards(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+        personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
         config,
       ),
       stage: state.stage,
@@ -1179,7 +1179,7 @@ async function enforceBookSmartGuards(
         success: true,
         sessionId,
         replyText: withHumanHandoffContact(
-          "Thanks. That area needs a quick manual review from our team before we book it.",
+          personalizeReply(state, "Got it. That area needs a quick manual review first."),
           config,
         ),
         stage: state.stage,
@@ -1442,4 +1442,33 @@ function withHumanHandoffContact(replyText: string, config: AppConfig): string {
   }
 
   return `${replyText} You can call or text ${phone} now if you’d rather talk to a person.`;
+}
+
+function personalizeReply(state: ChatSessionState, message: string): string {
+  const name = state.customer.firstName?.trim();
+  return name ? `${capitalize(name)}, ${message}` : message;
+}
+
+function askForServiceType(state: ChatSessionState): string {
+  return personalizeReply(state, "what kind of electrical issue or project do you need help with?");
+}
+
+function askForAddress(state: ChatSessionState): string {
+  return personalizeReply(state, "what’s the service address?");
+}
+
+function askForZip(state: ChatSessionState): string {
+  return personalizeReply(state, "what’s the ZIP there?");
+}
+
+function askForFirstName(state: ChatSessionState): string {
+  return "And what’s your first name?";
+}
+
+function askForPhone(state: ChatSessionState): string {
+  return personalizeReply(state, "what’s the best number for you?");
+}
+
+function askForPreferredWindow(state: ChatSessionState): string {
+  return personalizeReply(state, "do mornings or afternoons usually work better?");
 }

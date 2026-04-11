@@ -135,7 +135,8 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("dispatch team");
+    expect(reply.replyText.toLowerCase()).toContain("dispatch");
+    expect(reply.replyText.toLowerCase()).toContain("call or text");
   });
 
   it("submits a lead through the OpenAI runtime path instead of offering slots", async () => {
