@@ -8,7 +8,6 @@ const downloadButton = document.getElementById("chat-download");
 const statusText = document.getElementById("chat-status");
 const firstNameInput = document.getElementById("contact-first-name");
 const phoneInput = document.getElementById("contact-phone");
-const emailInput = document.getElementById("contact-email");
 
 const SESSION_STORAGE_KEY = "booksmart_public_chat_session";
 const HISTORY_STORAGE_KEY = "booksmart_public_chat_history";
@@ -30,7 +29,7 @@ function boot() {
     });
   });
   downloadButton.addEventListener("click", downloadTranscript);
-  [firstNameInput, phoneInput, emailInput].forEach((element) => {
+  [firstNameInput, phoneInput].forEach((element) => {
     element.addEventListener("input", saveContactFields);
   });
 }
@@ -245,7 +244,6 @@ function buildContactPayload() {
   const contact = {
     firstName: stored.firstName ?? "",
     phone: stored.phone ?? "",
-    email: stored.email ?? "",
   };
 
   return Object.fromEntries(Object.entries(contact).filter(([, value]) => value));
@@ -257,7 +255,6 @@ function saveContactFields() {
     JSON.stringify({
       firstName: firstNameInput.value.trim(),
       phone: phoneInput.value.trim(),
-      email: emailInput.value.trim(),
     }),
   );
 }
@@ -266,7 +263,6 @@ function hydrateContactFields() {
   const stored = loadSavedContactFields();
   firstNameInput.value = stored.firstName ?? "";
   phoneInput.value = stored.phone ?? "";
-  emailInput.value = stored.email ?? "";
 }
 
 function setBusy(isBusy, message) {
@@ -293,7 +289,6 @@ function resetConversation() {
   sessionStorage.removeItem(CONTACT_STORAGE_KEY);
   firstNameInput.value = "";
   phoneInput.value = "";
-  emailInput.value = "";
   input.value = "";
   ensureSeededHistory();
   renderHistory(loadHistory());

@@ -82,7 +82,7 @@ export function requestPhoto(serviceType: ServiceTypeConfig): {
 
   return {
     shouldRequestPhoto: true,
-    message: "If it’s easy, a photo can help our electrician prepare before arrival, but it is not required for booking.",
+    message: "If you want, you can send a couple photos too. It helps us prep, but it’s not required.",
   };
 }
 
