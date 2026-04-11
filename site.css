@@ -1,0 +1,221 @@
+:root {
+  --bg: #f5efe4;
+  --card: rgba(255, 250, 243, 0.9);
+  --card-strong: #fffaf3;
+  --border: rgba(59, 46, 33, 0.12);
+  --text: #241c14;
+  --muted: #6a6054;
+  --accent: #b45309;
+  --accent-dark: #7c2d12;
+  --shadow: 0 24px 60px rgba(88, 57, 18, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body.site-body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.16), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(194, 65, 12, 0.14), transparent 26%),
+    linear-gradient(145deg, #fbf6ee 0%, #efe3d1 100%);
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+}
+
+.site-shell,
+.chat-shell {
+  width: min(1100px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 56px;
+}
+
+.hero-card,
+.chat-card,
+.chat-header-card,
+.feature-card {
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.hero-card,
+.chat-header-card {
+  padding: 36px;
+}
+
+.site-eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.hero-card h1,
+.chat-header-card h1 {
+  max-width: 14ch;
+  font-size: clamp(2.6rem, 4vw, 4.4rem);
+  line-height: 0.95;
+}
+
+.hero-copy {
+  max-width: 60ch;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 1.04rem;
+  line-height: 1.65;
+}
+
+.hero-actions,
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.site-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 18px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.site-button.primary {
+  background: linear-gradient(180deg, #f59e0b, #ea580c);
+  color: white;
+}
+
+.site-button.secondary {
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--accent-dark);
+  border-color: rgba(124, 45, 18, 0.15);
+}
+
+.site-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(180, 83, 9, 0.18);
+}
+
+.site-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.feature-card {
+  padding: 22px;
+}
+
+.feature-card h2 {
+  font-size: 1.3rem;
+}
+
+.feature-card p,
+.chat-status,
+.back-link,
+.field span {
+  color: var(--muted);
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  line-height: 1.55;
+}
+
+.chat-card {
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.chat-thread {
+  display: grid;
+  gap: 12px;
+  min-height: 360px;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 8px 4px 20px;
+}
+
+.chat-bubble {
+  max-width: min(80%, 720px);
+  padding: 14px 16px;
+  border-radius: 20px;
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.chat-bubble.assistant {
+  justify-self: start;
+  background: rgba(255, 248, 238, 0.92);
+  border: 1px solid rgba(124, 45, 18, 0.1);
+}
+
+.chat-bubble.user {
+  justify-self: end;
+  background: linear-gradient(180deg, #f59e0b, #ea580c);
+  color: white;
+}
+
+.chat-form {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+  text-decoration: none;
+}
+
+@media (max-width: 860px) {
+  .site-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-card h1,
+  .chat-header-card h1 {
+    max-width: none;
+    font-size: clamp(2.2rem, 9vw, 3rem);
+  }
+
+  .chat-bubble {
+    max-width: 92%;
+  }
+}

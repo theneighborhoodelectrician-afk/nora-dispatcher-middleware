@@ -67,6 +67,12 @@
                 <select id="conversation-lead-filter">
                   <option value="">All lead sources</option>
                 </select>
+                <select id="conversation-sort">
+                  <option value="recent">Most recent</option>
+                  <option value="urgent_first">Urgent first</option>
+                  <option value="handoff_first">Handoff first</option>
+                  <option value="booked_last">Booked last</option>
+                </select>
               </div>
               <div id="conversation-list" class="list"></div>
             </section>
@@ -77,6 +83,8 @@
                 <div class="button-row">
                   <code id="detail-id">Select a conversation</code>
                   <button id="copy-summary" type="button">Copy Summary</button>
+                  <button id="copy-handoff-summary" type="button">Copy Handoff</button>
+                  <button id="mark-reviewed" type="button">Mark Reviewed</button>
                   <button id="copy-transcript" type="button">Copy Transcript</button>
                   <button id="open-related-config" type="button">Open Related Config</button>
                 </div>

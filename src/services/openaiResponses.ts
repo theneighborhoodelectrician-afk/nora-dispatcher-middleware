@@ -35,6 +35,11 @@ interface ResponsesApiResponse {
 export interface RunOpenAiResponsesResult {
   outputText: string;
   toolCalls: string[];
+  trace: Array<{
+    type: "function_call" | "function_result" | "final_output";
+    name?: string;
+    summary: string;
+  }>;
 }
 
 export async function runOpenAiResponses(
@@ -51,6 +56,7 @@ export async function runOpenAiResponses(
   } = options;
 
   const toolCalls: string[] = [];
+  const trace: RunOpenAiResponsesResult["trace"] = [];
   let response = await createResponse(baseUrl, apiKey, {
     model,
     input: [
@@ -87,6 +93,11 @@ export async function runOpenAiResponses(
 
       const tool = tools.find((entry) => entry.name === call.name);
       if (!tool) {
+        trace.push({
+          type: "function_call",
+          name: call.name,
+          summary: `Model requested unknown tool ${call.name}.`,
+        });
         outputs.push({
           type: "function_call_output",
           call_id: call.call_id,
@@ -99,15 +110,30 @@ export async function runOpenAiResponses(
       }
 
       toolCalls.push(tool.name);
+      trace.push({
+        type: "function_call",
+        name: tool.name,
+        summary: summarizeFunctionCall(tool.name, call.arguments),
+      });
       const parsedArgs = safeParseJson(call.arguments);
       try {
         const result = await tool.execute(parsedArgs);
+        trace.push({
+          type: "function_result",
+          name: tool.name,
+          summary: summarizeToolResult(tool.name, result),
+        });
         outputs.push({
           type: "function_call_output",
           call_id: call.call_id,
           output: JSON.stringify(result),
         });
       } catch (error) {
+        trace.push({
+          type: "function_result",
+          name: tool.name,
+          summary: `${tool.name} failed: ${error instanceof Error ? error.message : "Unknown tool execution error"}`,
+        });
         outputs.push({
           type: "function_call_output",
           call_id: call.call_id,
@@ -134,9 +160,16 @@ export async function runOpenAiResponses(
     rounds += 1;
   }
 
+  const outputText = extractOutputText(response);
+  trace.push({
+    type: "final_output",
+    summary: outputText ? `Assistant reply: ${truncate(outputText, 160)}` : "Assistant returned no reply text.",
+  });
+
   return {
-    outputText: extractOutputText(response),
+    outputText,
     toolCalls,
+    trace,
   };
 }
 
@@ -188,4 +221,29 @@ function safeParseJson(value: string | undefined): unknown {
   } catch {
     return {};
   }
+}
+
+function summarizeFunctionCall(name: string, args: string | undefined): string {
+  const parsed = safeParseJson(args);
+  if (!parsed || typeof parsed !== "object" || !Object.keys(parsed).length) {
+    return `${name} called with no structured arguments.`;
+  }
+
+  return `${name} called with ${truncate(JSON.stringify(parsed), 160)}.`;
+}
+
+function summarizeToolResult(name: string, result: unknown): string {
+  if (typeof result === "string") {
+    return `${name} returned ${truncate(result, 160)}.`;
+  }
+
+  if (!result || typeof result !== "object") {
+    return `${name} completed.`;
+  }
+
+  return `${name} returned ${truncate(JSON.stringify(result), 160)}.`;
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
 }

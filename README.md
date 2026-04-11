@@ -63,6 +63,23 @@ Current capabilities:
 
 This UI is intentionally thin in v1. It is a static internal surface over the admin APIs, not yet a fully modeled operator dashboard.
 
+## Public UI
+
+The project now includes a lightweight public web surface:
+
+- `/`
+  Landing page for BookSmart
+- `/book/`
+  Browser-based chat entry wired into the existing BookSmart conversation flow
+- `POST /api/public/chat`
+  Public web-chat endpoint that reuses the same `handleChatMessage` orchestration without the inbound webhook signature requirement
+
+Current assumptions:
+
+- the public chat keeps session state in the browser tab for now
+- lead source defaults to `website` unless provided by query string or payload
+- this route is intended for first-party browser usage, while Blooio and other channels should keep using the authenticated webhook path
+
 ## OpenAI runtime
 
 BookSmart now has an optional OpenAI Responses runtime path layered on top of the existing typed tools.
@@ -107,6 +124,7 @@ Assumptions in the current implementation:
 - Availability webhook: `POST /api/webhooks/availability`
 - Booking webhook: `POST /api/webhooks/booking`
 - Chat webhook: `POST /api/webhooks/chat`
+- Public browser chat: `POST /api/public/chat`
 - Health check: `GET /api/health`
 - Health response includes storage mode and whether the Postgres schema is ready
 - Health response also includes whether storage auto-init is enabled

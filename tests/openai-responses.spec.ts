@@ -63,6 +63,11 @@ describe("OpenAI Responses orchestration", () => {
 
     expect(result.outputText).toBe("What city is the project in?");
     expect(result.toolCalls).toEqual(["echo_tool"]);
+    expect(result.trace.map((entry) => entry.type)).toEqual([
+      "function_call",
+      "function_result",
+      "final_output",
+    ]);
     expect(tool).toHaveBeenCalledWith({ value: "hello" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
 

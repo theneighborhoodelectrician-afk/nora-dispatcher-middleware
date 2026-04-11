@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BookSmart Booking</title>
+    <link rel="stylesheet" href="/site.css" />
+  </head>
+  <body class="site-body">
+    <main class="chat-shell">
+      <section class="chat-header-card">
+        <a class="back-link" href="/">← Back</a>
+        <p class="site-eyebrow">BookSmart</p>
+        <h1>Start your booking</h1>
+        <p class="hero-copy">
+          Tell us a little about the project and BookSmart will guide the booking one step at a time.
+        </p>
+      </section>
+
+      <section class="chat-card">
+        <div id="chat-thread" class="chat-thread" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+          <label class="field">
+            <span>Your message</span>
+            <textarea id="chat-input" rows="3" placeholder="Type here..."></textarea>
+          </label>
+          <div class="chat-actions">
+            <span id="chat-status" class="chat-status">Messages stay in this browser tab for now.</span>
+            <button id="chat-send" class="site-button primary" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/book/app.js"></script>
+  </body>
+</html>

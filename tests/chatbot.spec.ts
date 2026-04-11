@@ -212,6 +212,206 @@ describe("BookSmart chat flow", () => {
     );
   });
 
+  it("can use the OpenAI runtime path to store structured fields before asking the next question", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_city_1",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_city_1",
+              name: "update_conversation_state",
+              arguments: JSON.stringify({ city: "Sterling Heights" }),
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_city_2",
+          output_text: "What kind of electrical project do you need help with?",
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-city",
+        text: "Sterling Heights",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.stage).toBe("collect_service_type");
+    expect(reply.replyText).toContain("What kind of electrical project");
+
+    const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-city");
+    expect(storedSession?.payload.customer.city).toBe("Sterling Heights");
+
+    const stages = await storage.listConversationStages("booksmart-ai-city");
+    expect(stages.some((stage) => stage.stage === "city_collected")).toBe(true);
+
+    const messages = await storage.listConversationMessages("booksmart-ai-city");
+    expect(
+      messages.some((message) => message.direction === "tool" && message.toolName === "update_conversation_state"),
+    ).toBe(true);
+  });
+
+  it("can use the OpenAI runtime path to resolve a chosen slot and book it", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
+
+    const lastOfferedOptions = [
+      {
+        label: "Monday at 9:00 AM",
+        start: "2026-04-06T13:00:00.000Z",
+        end: "2026-04-06T17:00:00.000Z",
+        technician: "Dave" as const,
+        bookingTarget: "job" as const,
+      },
+      {
+        label: "Tuesday at 9:00 AM",
+        start: "2026-04-07T13:00:00.000Z",
+        end: "2026-04-07T17:00:00.000Z",
+        technician: "Dave" as const,
+        bookingTarget: "job" as const,
+      },
+      {
+        label: "Wednesday at 9:00 AM",
+        start: "2026-04-08T13:00:00.000Z",
+        end: "2026-04-08T17:00:00.000Z",
+        technician: "Dave" as const,
+        bookingTarget: "job" as const,
+      },
+    ];
+
+    const sessionState: ChatSessionState = {
+      sessionId: "booksmart-ai-book",
+      stage: "offer_slots",
+      customer: {
+        city: "Sterling Heights",
+        requestedService: "Breaker tripping",
+        address: "123 Main St",
+        zipCode: "48313",
+        firstName: "Jane",
+        phone: "555-111-2222",
+        preferredWindow: "morning",
+      },
+      bookingStatus: "offered",
+      lastOfferedOptions,
+      transcript: [],
+      analytics: createInitialAnalytics(
+        new Date("2026-04-04T11:00:00.000Z").getTime(),
+        "hello",
+        "website",
+      ),
+    };
+
+    await storage.storeChatSession(sessionState.sessionId, sessionState);
+
+    const selectedSlotOptionId = [
+      lastOfferedOptions[1]!.start,
+      lastOfferedOptions[1]!.end,
+      lastOfferedOptions[1]!.technician,
+      lastOfferedOptions[1]!.bookingTarget,
+    ].join("__");
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_book_1",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_book_1",
+              name: "resolve_slot_selection",
+              arguments: JSON.stringify({ customerText: "the second one works" }),
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_book_2",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_book_2",
+              name: "create_booking",
+              arguments: JSON.stringify({ slotOptionId: selectedSlotOptionId }),
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_book_3",
+          output_text: "You’re all set. I booked you for Tuesday at 9:00 AM.",
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-book",
+        text: "the second one works",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.stage).toBe("booked");
+    expect(reply.bookingId).toContain("mock-");
+    expect(reply.replyText).toContain("Tuesday at 9:00 AM");
+
+    const messages = await storage.listConversationMessages("booksmart-ai-book");
+    expect(
+      messages.some((message) => message.direction === "tool" && message.toolName === "resolve_slot_selection"),
+    ).toBe(true);
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_booking")).toBe(
+      true,
+    );
+    const decisionTrace = messages.find(
+      (message) => message.direction === "tool" && message.toolName === "openai_decision_trace",
+    );
+    expect(decisionTrace?.toolCallSummary).toContain("resolve_slot_selection");
+    expect(Array.isArray(decisionTrace?.metadata?.trace)).toBe(true);
+
+    const outcome = await storage.getConversationOutcome("booksmart-ai-book");
+    expect(outcome?.bookedYesNo).toBe(true);
+    expect(outcome?.slotSelected).toBe(true);
+  });
+
   it("hands off urgent issues instead of continuing normal booking", async () => {
     const storage = new MemoryStorageAdapter();
 

@@ -210,7 +210,9 @@ function buildSystemSummary(state: ChatSessionState): string | undefined {
     return `Booked ${state.serviceTypeId ?? "service"} after presenting ${state.analytics.slotsShownCount} slots.`;
   }
   if (state.bookingStatus === "handoff") {
-    return `Handed off during ${state.stage}.`;
+    return state.analytics.lastHandoffReason
+      ? `Handed off: ${state.analytics.lastHandoffReason}.`
+      : `Handed off during ${state.stage}.`;
   }
   return undefined;
 }

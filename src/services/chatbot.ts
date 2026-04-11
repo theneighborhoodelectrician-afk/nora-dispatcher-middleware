@@ -64,6 +64,8 @@ interface ChatAnalyticsState {
   photoRequested: boolean;
   photoSent: boolean;
   finalHcpJobType?: string;
+  lastBookingId?: string;
+  lastHandoffReason?: string;
 }
 
 export interface ChatSessionState {
@@ -223,6 +225,7 @@ export async function handleChatMessage(
 
       state.stage = "human_handoff";
       state.bookingStatus = "handoff";
+      state.analytics.lastHandoffReason = "booking_fallback";
       await storage.appendBookingEvent({
         conversationId: state.sessionId,
         finalHcpJobType: selectedOption.bookingTarget,
@@ -253,6 +256,7 @@ export async function handleChatMessage(
   if (shouldHandOff(messageText)) {
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    state.analytics.lastHandoffReason = "human_requested";
     await storage.appendHandoffEvent({
       conversationId: state.sessionId,
       reason: "human_requested",
@@ -302,6 +306,7 @@ export async function handleChatMessage(
     handoffToHuman("outside_service_area");
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    state.analytics.lastHandoffReason = "outside_service_area";
     await storage.appendHandoffEvent({
       conversationId: state.sessionId,
       reason: "outside_service_area",
@@ -339,6 +344,7 @@ export async function handleChatMessage(
         handoffToHuman("urgent");
         state.stage = "human_handoff";
         state.bookingStatus = "handoff";
+        state.analytics.lastHandoffReason = "urgent";
         await persistUrgencyHits(storage, state, now);
         await storage.appendHandoffEvent({
           conversationId: state.sessionId,
@@ -392,6 +398,7 @@ export async function handleChatMessage(
     handoffToHuman("urgent");
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    state.analytics.lastHandoffReason = "urgent";
     await persistUrgencyHits(storage, state, now);
     await storage.appendHandoffEvent({
       conversationId: state.sessionId,
@@ -591,6 +598,7 @@ export async function handleChatMessage(
 
   state.stage = "human_handoff";
   state.bookingStatus = "handoff";
+  state.analytics.lastHandoffReason = availability.status;
   await storage.appendHandoffEvent({
     conversationId: state.sessionId,
     reason: availability.status,
@@ -817,8 +825,6 @@ async function tryHandleChatMessageWithOpenAi(
   timestamp: number,
 ): Promise<ChatReplyPayload | undefined> {
   try {
-    applyHeuristicUpdates(state, messageText, timestamp);
-
     const tools = createOpenAiTools(storage, config, bookSmartConfig, state, messageText, timestamp);
     const result = await runOpenAiResponses({
       apiKey: config.openai.apiKey!,
@@ -827,6 +833,20 @@ async function tryHandleChatMessageWithOpenAi(
       systemPrompt: buildBookSmartSystemPrompt(bookSmartConfig),
       inputText: buildOpenAiInput(state, messageText, bookSmartConfig),
       tools,
+    });
+
+    await recordMessage(storage, {
+      conversationId: state.sessionId,
+      direction: "tool",
+      timestamp,
+      toolName: "openai_decision_trace",
+      toolCallSummary: summarizeOpenAiDecisionTrace(result.toolCalls),
+      metadata: {
+        model: config.openai.model,
+        toolCalls: result.toolCalls,
+        trace: result.trace,
+        outputText: result.outputText,
+      },
     });
 
     const enforcedReply = await enforceBookSmartGuards(storage, state, bookSmartConfig, sessionId, timestamp);
@@ -845,6 +865,7 @@ async function tryHandleChatMessageWithOpenAi(
       replyText: result.outputText,
       stage: state.stage,
       options: state.stage === "offer_slots" ? state.lastOfferedOptions : undefined,
+      bookingId: state.stage === "booked" ? state.analytics.lastBookingId : undefined,
       handoffRequired: state.stage === "human_handoff" ? true : undefined,
     }, timestamp);
   } catch (error) {
@@ -862,6 +883,63 @@ function createOpenAiTools(
   timestamp: number,
 ): OpenAiFunctionTool[] {
   return [
+    {
+      name: "update_conversation_state",
+      description: "Store structured customer details extracted from the latest message without guessing missing values.",
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string" },
+          address: { type: "string" },
+          zipCode: { type: "string" },
+          firstName: { type: "string" },
+          lastName: { type: "string" },
+          phone: { type: "string" },
+          email: { type: "string" },
+          preferredWindow: {
+            type: "string",
+            enum: ["morning", "afternoon"],
+          },
+          notes: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const updates = readStateUpdateArgs(args);
+        const applied = applyStructuredConversationUpdates(state, updates);
+
+        if (applied.city) {
+          await recordStageOnce(storage, state, "city_collected", timestamp, { city: state.customer.city });
+        }
+        if (applied.address || applied.zipCode) {
+          await recordStageOnce(storage, state, "address_collected", timestamp, {
+            zipCode: state.customer.zipCode,
+          });
+        }
+        if (applied.firstName || applied.phone || applied.email) {
+          await recordStageOnce(storage, state, "contact_collected", timestamp, {
+            firstName: state.customer.firstName,
+            phone: state.customer.phone,
+            email: state.customer.email,
+          });
+        }
+
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "update_conversation_state",
+          toolCallSummary: `Stored structured conversation fields: ${Object.keys(applied).join(", ") || "none"}.`,
+        });
+
+        return {
+          ok: true,
+          applied,
+          customer: state.customer,
+          nextStage: deriveStageFromState(state),
+        };
+      },
+    },
     {
       name: "check_service_area",
       description: "Validate whether a city is inside the configured service area.",
@@ -1016,6 +1094,7 @@ function createOpenAiTools(
         } else {
           state.stage = "human_handoff";
           state.bookingStatus = "handoff";
+          state.analytics.lastHandoffReason = availability.status;
           await storage.appendHandoffEvent({
             conversationId: state.sessionId,
             reason: availability.status,
@@ -1036,6 +1115,61 @@ function createOpenAiTools(
             end: option.end,
             technician: option.technician,
           })),
+        };
+      },
+    },
+    {
+      name: "resolve_slot_selection",
+      description: "Resolve which previously offered slot the customer selected from ordinal or natural-language wording.",
+      parameters: {
+        type: "object",
+        properties: {
+          customerText: {
+            type: "string",
+            description: "The latest customer message about which slot they want.",
+          },
+          slotOptionId: {
+            type: "string",
+            description: "Optional explicit slot option id when the model already knows the chosen slot.",
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const explicitSlotOptionId = readStringArg(args, "slotOptionId");
+        const customerText = readStringArg(args, "customerText") ?? messageText;
+        const selectedOption = explicitSlotOptionId
+          ? selectSlotById(explicitSlotOptionId, state.lastOfferedOptions)
+          : matchOptionSelection(customerText, state.lastOfferedOptions ?? []);
+
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "resolve_slot_selection",
+          toolCallSummary: selectedOption
+            ? `Resolved customer selection to ${selectedOption.label}.`
+            : "Could not resolve customer slot selection.",
+        });
+
+        if (!selectedOption) {
+          return {
+            ok: false,
+            error: "No matching offered slot could be resolved.",
+            availableOptions: (state.lastOfferedOptions ?? []).map((option) => ({
+              slotOptionId: buildSlotOptionId(option),
+              label: option.label,
+            })),
+          };
+        }
+
+        return {
+          ok: true,
+          slotOptionId: buildSlotOptionId(selectedOption),
+          label: selectedOption.label,
+          start: selectedOption.start,
+          end: selectedOption.end,
+          technician: selectedOption.technician,
         };
       },
     },
@@ -1094,6 +1228,7 @@ function createOpenAiTools(
           state.stage = "booked";
           state.bookingStatus = "booked";
           state.analytics.finalHcpJobType = selectedOption.bookingTarget;
+          state.analytics.lastBookingId = booking.externalId;
           await storage.appendBookingEvent({
             conversationId: state.sessionId,
             bookingExternalId: booking.externalId,
@@ -1118,6 +1253,7 @@ function createOpenAiTools(
         } else {
           state.stage = "human_handoff";
           state.bookingStatus = "handoff";
+          state.analytics.lastHandoffReason = "booking_fallback";
           await storage.appendBookingEvent({
             conversationId: state.sessionId,
             finalHcpJobType: selectedOption.bookingTarget,
@@ -1186,6 +1322,7 @@ function createOpenAiTools(
         await recordStageOnce(storage, state, "escalated", timestamp, {
           reason,
         });
+        state.analytics.lastHandoffReason = reason;
         return handoffToHuman(reason);
       },
     },
@@ -1202,6 +1339,7 @@ async function enforceBookSmartGuards(
   if (state.urgency === "urgent" && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff") {
     state.stage = "human_handoff";
     state.bookingStatus = "handoff";
+    state.analytics.lastHandoffReason = "urgent";
     await persistUrgencyHits(storage, state, timestamp);
     await storage.appendHandoffEvent({
       conversationId: state.sessionId,
@@ -1228,6 +1366,7 @@ async function enforceBookSmartGuards(
     if (!areaDecision.ok) {
       state.stage = "human_handoff";
       state.bookingStatus = "handoff";
+      state.analytics.lastHandoffReason = "outside_service_area";
       await storage.appendHandoffEvent({
         conversationId: state.sessionId,
         reason: "outside_service_area",
@@ -1272,6 +1411,7 @@ function buildOpenAiInput(
   return JSON.stringify({
     latestCustomerMessage: latestMessage,
     stage: state.stage,
+    missingFields: listMissingFields(state),
     bookingStatus: state.bookingStatus,
     customer: state.customer,
     serviceTypeId: state.serviceTypeId,
@@ -1285,39 +1425,6 @@ function buildOpenAiInput(
       requestPhotosFor: config.conversation.requestPhotosFor,
     },
   });
-}
-
-function applyHeuristicUpdates(
-  state: ChatSessionState,
-  messageText: string,
-  timestamp: number,
-): void {
-  if (!state.customer.city && state.stage === "collect_city" && state.transcript.length > 1) {
-    state.customer.city = messageText;
-  }
-
-  if (!state.customer.address && state.stage === "collect_address") {
-    state.customer.address = messageText;
-    state.customer.zipCode = state.customer.zipCode ?? extractZipCode(messageText);
-  }
-
-  if (!state.customer.zipCode) {
-    state.customer.zipCode = extractZipCode(messageText) ?? state.customer.zipCode;
-  }
-
-  if (!state.customer.phone) {
-    state.customer.phone = extractPhoneNumber(messageText) ?? state.customer.phone;
-  }
-
-  if (!state.customer.firstName && state.stage === "collect_name") {
-    state.customer.firstName = inferFirstName(messageText);
-  }
-
-  if (!state.customer.preferredWindow) {
-    state.customer.preferredWindow = inferPreferredWindow(messageText) ?? state.customer.preferredWindow;
-  }
-
-  state.analytics.timestampStarted = Math.min(state.analytics.timestampStarted, timestamp);
 }
 
 function deriveStageFromState(state: ChatSessionState): ChatStage {
@@ -1364,12 +1471,114 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
   return "collect_preferred_window";
 }
 
+function listMissingFields(state: ChatSessionState): string[] {
+  const missing: string[] = [];
+  if (!state.customer.city) {
+    missing.push("city");
+  }
+  if (!state.customer.requestedService) {
+    missing.push("service_type");
+  }
+  if (!state.customer.address) {
+    missing.push("address");
+  }
+  if (!state.customer.zipCode) {
+    missing.push("zip_code");
+  }
+  if (!state.customer.firstName) {
+    missing.push("first_name");
+  }
+  if (!state.customer.phone) {
+    missing.push("phone");
+  }
+  if (!state.customer.preferredWindow) {
+    missing.push("preferred_window");
+  }
+  return missing;
+}
+
+function readStateUpdateArgs(args: unknown): Partial<CustomerRequest> {
+  return {
+    city: readStringArg(args, "city"),
+    address: readStringArg(args, "address"),
+    zipCode: readStringArg(args, "zipCode"),
+    firstName: readStringArg(args, "firstName"),
+    lastName: readStringArg(args, "lastName"),
+    phone: normalizePhoneArg(readStringArg(args, "phone")),
+    email: readStringArg(args, "email"),
+    preferredWindow: readPreferredWindowArg(args, "preferredWindow"),
+    notes: readStringArg(args, "notes"),
+  };
+}
+
+function applyStructuredConversationUpdates(
+  state: ChatSessionState,
+  updates: Partial<CustomerRequest>,
+): Record<string, unknown> {
+  const applied: Record<string, unknown> = {};
+
+  if (updates.city && updates.city !== state.customer.city) {
+    state.customer.city = updates.city;
+    applied.city = updates.city;
+  }
+  if (updates.address && updates.address !== state.customer.address) {
+    state.customer.address = updates.address;
+    applied.address = updates.address;
+  }
+  if (updates.zipCode && updates.zipCode !== state.customer.zipCode) {
+    state.customer.zipCode = updates.zipCode;
+    applied.zipCode = updates.zipCode;
+  }
+  if (updates.firstName && updates.firstName !== state.customer.firstName) {
+    state.customer.firstName = updates.firstName;
+    applied.firstName = updates.firstName;
+  }
+  if (updates.lastName && updates.lastName !== state.customer.lastName) {
+    state.customer.lastName = updates.lastName;
+    applied.lastName = updates.lastName;
+  }
+  if (updates.phone && updates.phone !== state.customer.phone) {
+    state.customer.phone = updates.phone;
+    applied.phone = updates.phone;
+  }
+  if (updates.email && updates.email !== state.customer.email) {
+    state.customer.email = updates.email;
+    applied.email = updates.email;
+  }
+  if (updates.preferredWindow && updates.preferredWindow !== state.customer.preferredWindow) {
+    state.customer.preferredWindow = updates.preferredWindow;
+    applied.preferredWindow = updates.preferredWindow;
+  }
+  if (updates.notes && updates.notes !== state.customer.notes) {
+    state.customer.notes = updates.notes;
+    applied.notes = updates.notes;
+  }
+
+  state.stage = deriveStageFromState(state);
+  return applied;
+}
+
 function readStringArg(args: unknown, key: string): string | undefined {
   if (!args || typeof args !== "object") {
     return undefined;
   }
   const value = (args as Record<string, unknown>)[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readPreferredWindowArg(
+  args: unknown,
+  key: string,
+): "morning" | "afternoon" | undefined {
+  const value = readStringArg(args, key);
+  return value === "morning" || value === "afternoon" ? value : undefined;
+}
+
+function normalizePhoneArg(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return extractPhoneNumber(value) ?? value;
 }
 
 function selectSlotById(
@@ -1390,4 +1599,12 @@ function normalizeHandoffReason(
     return value;
   }
   return "fallback";
+}
+
+function summarizeOpenAiDecisionTrace(toolCalls: string[]): string {
+  if (!toolCalls.length) {
+    return "OpenAI responded without tool calls.";
+  }
+
+  return `OpenAI used tools: ${toolCalls.join(", ")}.`;
 }

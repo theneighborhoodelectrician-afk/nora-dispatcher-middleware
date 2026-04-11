@@ -7,6 +7,8 @@ const conversationList = document.getElementById("conversation-list");
 const conversationDetail = document.getElementById("conversation-detail");
 const detailId = document.getElementById("detail-id");
 const copySummaryButton = document.getElementById("copy-summary");
+const copyHandoffSummaryButton = document.getElementById("copy-handoff-summary");
+const markReviewedButton = document.getElementById("mark-reviewed");
 const copyTranscriptButton = document.getElementById("copy-transcript");
 const openRelatedConfigButton = document.getElementById("open-related-config");
 const conversationStats = document.getElementById("conversation-stats");
@@ -15,6 +17,7 @@ const conversationLimitInput = document.getElementById("conversation-limit");
 const conversationSearchInput = document.getElementById("conversation-search");
 const conversationStatusFilter = document.getElementById("conversation-status-filter");
 const conversationLeadFilter = document.getElementById("conversation-lead-filter");
+const conversationSortSelect = document.getElementById("conversation-sort");
 const configEditor = document.getElementById("config-editor");
 const configStatus = document.getElementById("config-status");
 const loadConfigButton = document.getElementById("load-config");
@@ -36,6 +39,7 @@ const serviceTypeEditor = document.getElementById("service-type-editor");
 const addServiceTypeButton = document.getElementById("add-service-type");
 
 const SECRET_STORAGE_KEY = "booksmart_admin_secret";
+const REVIEWED_STORAGE_KEY = "booksmart_reviewed_conversations";
 const PHOTO_CATEGORIES = [
   { value: "service_call", label: "Service calls" },
   { value: "estimate", label: "Estimates" },
@@ -96,13 +100,21 @@ function bindEvents() {
     loadConversations().catch(showConversationError);
   });
 
-  [conversationSearchInput, conversationStatusFilter, conversationLeadFilter].forEach((element) => {
+  [conversationSearchInput, conversationStatusFilter, conversationLeadFilter, conversationSortSelect].forEach((element) => {
     element.addEventListener("input", renderConversationList);
     element.addEventListener("change", renderConversationList);
   });
 
   copySummaryButton.addEventListener("click", () => {
     copyConversationSummary().catch(showConversationError);
+  });
+
+  copyHandoffSummaryButton.addEventListener("click", () => {
+    copyCurrentHandoffSummary().catch(showConversationError);
+  });
+
+  markReviewedButton.addEventListener("click", () => {
+    toggleCurrentConversationReviewed();
   });
 
   copyTranscriptButton.addEventListener("click", () => {
@@ -187,7 +199,7 @@ async function loadConversations() {
 }
 
 function renderConversationList() {
-  const outcomes = filterConversationOutcomes(currentOutcomes);
+  const outcomes = sortConversationOutcomes(filterConversationOutcomes(currentOutcomes));
 
   if (!outcomes.length) {
     conversationList.innerHTML = '<div class="detail-empty">No conversations tracked yet.</div>';
@@ -198,17 +210,23 @@ function renderConversationList() {
   outcomes.forEach((outcome) => {
     const wrapper = document.createElement("article");
     wrapper.className = "list-item";
+    const queueReason = deriveQueueReason(outcome);
+    const previewSummary = deriveOutcomePreview(outcome);
+    const reviewed = isConversationReviewed(outcome.conversationId);
 
     const button = document.createElement("button");
+    button.className = "list-item-main";
     button.type = "button";
     button.innerHTML = `
       <strong>${escapeHtml(outcome.conversationId)}</strong>
       <div class="badge-row">
         <span class="badge">${escapeHtml(outcome.leadSource)}</span>
         <span class="badge ${escapeHtml(statusBadgeClass(outcome))}">${escapeHtml(outcome.finalBookingStatus ?? "in_progress")}</span>
+        ${queueReason ? `<span class="badge reason-badge">${escapeHtml(queueReason)}</span>` : ""}
+        ${reviewed ? '<span class="badge reviewed-badge">reviewed</span>' : ""}
       </div>
       <p>${escapeHtml(outcome.classifiedServiceType ?? outcome.firstCustomerMessage)}</p>
-      <div class="summary">${escapeHtml(outcome.systemSummary ?? outcome.abandonmentStage ?? "No summary yet.")}</div>
+      <div class="summary">${escapeHtml(previewSummary)}</div>
       <div class="list-meta">
         <span>Booked: ${outcome.bookedYesNo ? "yes" : "no"}</span>
         <span>Handoff: ${outcome.handoffYesNo ? "yes" : "no"}</span>
@@ -220,6 +238,36 @@ function renderConversationList() {
     });
 
     wrapper.appendChild(button);
+    const actions = document.createElement("div");
+    actions.className = "list-item-actions";
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "inline-action";
+    copyButton.textContent = "Copy handoff";
+    copyButton.disabled = !outcome.handoffYesNo;
+    copyButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(buildHandoffSummaryText(outcome));
+      } catch (error) {
+        showConversationError(error);
+      }
+    });
+
+    const reviewButton = document.createElement("button");
+    reviewButton.type = "button";
+    reviewButton.className = "inline-action";
+    reviewButton.textContent = reviewed ? "Unreview" : "Mark reviewed";
+    reviewButton.addEventListener("click", () => {
+      toggleConversationReviewed(outcome.conversationId);
+      renderConversationList();
+      if (currentConversationBundle?.conversationId === outcome.conversationId) {
+        updateReviewedButtonState();
+      }
+    });
+
+    actions.append(copyButton, reviewButton);
+    wrapper.appendChild(actions);
     conversationList.appendChild(wrapper);
   });
 }
@@ -239,6 +287,8 @@ async function loadConversationDetail(conversationId) {
   const handoffEvents = payload.handoffEvents ?? [];
   const outcome = payload.outcome ?? {};
   const lastStage = stages.at(-1)?.stage ?? "unknown";
+  const aiDecisions = extractAiDecisionEntries(messages);
+  updateReviewedButtonState();
 
   conversationDetail.innerHTML = `
     <div class="detail-grid">
@@ -267,6 +317,7 @@ async function loadConversationDetail(conversationId) {
         `Handoff: ${outcome.handoffYesNo ? "yes" : "no"}`,
       ])}
       ${renderBlock("Stages", stages.map((stage) => `${stage.stage} · ${formatTime(stage.timestamp)}`))}
+      ${renderAiDecisionBlock(aiDecisions)}
       ${renderBlock("Transcript", messages.map((message) => `${message.direction}${message.toolName ? `:${message.toolName}` : ""} · ${message.text ?? message.toolCallSummary ?? ""}`))}
       ${renderBlock("Slot Exposure", slots.map((slot) => `${slot.slotOrderPresented}. ${slot.slotLabel} ${slot.selectedYesNo ? "(selected)" : ""}`))}
       ${renderBlock("Urgency Hits", urgencyHits.length ? urgencyHits.map((hit) => `${hit.keywordDetected} · ${hit.mappedUrgencyLevel}`) : ["None"])}
@@ -366,6 +417,15 @@ async function copyConversationTranscript() {
   conversationDetail.dataset.notice = "Transcript copied.";
 }
 
+async function copyCurrentHandoffSummary() {
+  if (!currentConversationBundle?.outcome) {
+    throw new Error("Load a conversation first.");
+  }
+
+  await navigator.clipboard.writeText(buildHandoffSummaryText(currentConversationBundle.outcome));
+  conversationDetail.dataset.notice = "Handoff summary copied.";
+}
+
 function openRelatedConfigSection() {
   if (!currentConversationBundle?.outcome) {
     showConfigError(new Error("Load a conversation first."));
@@ -407,6 +467,17 @@ function openRelatedConfigSection() {
   configStatus.textContent = "Jumped to conversation settings.";
 }
 
+function toggleCurrentConversationReviewed() {
+  if (!currentConversationBundle?.conversationId) {
+    showConversationError(new Error("Load a conversation first."));
+    return;
+  }
+
+  toggleConversationReviewed(currentConversationBundle.conversationId);
+  updateReviewedButtonState();
+  renderConversationList();
+}
+
 function filterConversationOutcomes(outcomes) {
   const search = conversationSearchInput.value.trim().toLowerCase();
   const status = conversationStatusFilter.value;
@@ -437,6 +508,14 @@ function filterConversationOutcomes(outcomes) {
     }
     return true;
   });
+}
+
+function sortConversationOutcomes(outcomes) {
+  const mode = conversationSortSelect?.value ?? "recent";
+  const sorted = [...outcomes];
+
+  sorted.sort((left, right) => compareConversationOutcomes(left, right, mode));
+  return sorted;
 }
 
 function updateConfigFromForms() {
@@ -688,6 +767,38 @@ function renderBlock(title, items) {
   `;
 }
 
+function renderAiDecisionBlock(aiDecisions) {
+  if (!aiDecisions.length) {
+    return renderBlock("AI Decisions", ["No AI decision trace recorded for this conversation."]);
+  }
+
+  return `
+    <section class="detail-block ai-decision-block">
+      <h4>AI Decisions</h4>
+      <ul class="ai-decision-list">
+        ${aiDecisions.map((decision) => `
+          <li class="ai-decision-item">
+            <div class="ai-decision-header">
+              <span class="badge">AI turn</span>
+              <span class="status-text">${escapeHtml(formatTime(decision.timestamp))}</span>
+            </div>
+            <p>${escapeHtml(decision.summary)}</p>
+            <div class="ai-trace-list">
+              ${(decision.trace ?? []).map((entry) => `
+                <div class="ai-trace-entry">
+                  <strong>${escapeHtml(entry.type)}</strong>
+                  ${entry.name ? `<span class="badge">${escapeHtml(entry.name)}</span>` : ""}
+                  <span>${escapeHtml(entry.summary ?? "")}</span>
+                </div>
+              `).join("")}
+            </div>
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
+}
+
 function statCard(title, value, detail) {
   return `
     <section class="stat-card">
@@ -696,6 +807,154 @@ function statCard(title, value, detail) {
       <div class="status-text">${escapeHtml(detail)}</div>
     </section>
   `;
+}
+
+function extractAiDecisionEntries(messages) {
+  return (messages ?? [])
+    .filter((message) => message.direction === "tool" && message.toolName === "openai_decision_trace")
+    .map((message) => ({
+      timestamp: message.timestamp,
+      summary: message.toolCallSummary ?? "AI decision trace recorded.",
+      trace: Array.isArray(message.metadata?.trace) ? message.metadata.trace : [],
+    }));
+}
+
+function deriveOutcomePreview(outcome) {
+  if (outcome.systemSummary) {
+    return outcome.systemSummary;
+  }
+
+  if (outcome.handoffYesNo) {
+    return `Needs review: ${deriveQueueReason(outcome) ?? "handoff"}.`;
+  }
+
+  if (outcome.availabilityShown) {
+    return `Availability shown with ${outcome.slotsShownCount ?? 0} slots.`;
+  }
+
+  if (outcome.abandonmentStage) {
+    return `Waiting at ${outcome.abandonmentStage}.`;
+  }
+
+  return "No summary yet.";
+}
+
+function deriveQueueReason(outcome) {
+  const summary = String(outcome.systemSummary ?? "").toLowerCase();
+  const status = String(outcome.finalBookingStatus ?? "").toLowerCase();
+
+  if (outcome.bookedYesNo) {
+    return "booked";
+  }
+  if (summary.includes("outside_service_area")) {
+    return "outside area";
+  }
+  if (summary.includes("human_requested")) {
+    return "human requested";
+  }
+  if (summary.includes("booking_fallback")) {
+    return "booking fallback";
+  }
+  if (summary.includes("urgent")) {
+    return "urgent";
+  }
+  if (status === "human_escalation_required") {
+    return "hcp escalation";
+  }
+  if (outcome.handoffYesNo) {
+    return "handoff";
+  }
+  if (outcome.availabilityShown) {
+    return "slots shown";
+  }
+  return "";
+}
+
+function buildHandoffSummaryText(outcome) {
+  const queueReason = deriveQueueReason(outcome) || "handoff";
+  return [
+    `Conversation: ${outcome.conversationId ?? currentConversationBundle?.conversationId ?? "unknown"}`,
+    `Lead source: ${outcome.leadSource ?? "unknown"}`,
+    `Service type: ${outcome.classifiedServiceType ?? "n/a"}`,
+    `Reason: ${queueReason}`,
+    `Urgency: ${outcome.urgencyLevel ?? "normal"}`,
+    `Summary: ${outcome.systemSummary ?? "No internal summary yet."}`,
+  ].join("\n");
+}
+
+function compareConversationOutcomes(left, right, mode) {
+  if (mode === "urgent_first") {
+    return (
+      compareDescending(Number(isUrgentOutcome(left)), Number(isUrgentOutcome(right))) ||
+      compareDescending(Number(left.handoffYesNo), Number(right.handoffYesNo)) ||
+      compareDescending(left.timestampLastMessage ?? 0, right.timestampLastMessage ?? 0)
+    );
+  }
+
+  if (mode === "handoff_first") {
+    return (
+      compareDescending(Number(left.handoffYesNo), Number(right.handoffYesNo)) ||
+      compareDescending(Number(isUrgentOutcome(left)), Number(isUrgentOutcome(right))) ||
+      compareDescending(left.timestampLastMessage ?? 0, right.timestampLastMessage ?? 0)
+    );
+  }
+
+  if (mode === "booked_last") {
+    return (
+      compareAscending(Number(left.bookedYesNo), Number(right.bookedYesNo)) ||
+      compareDescending(Number(left.handoffYesNo), Number(right.handoffYesNo)) ||
+      compareDescending(left.timestampLastMessage ?? 0, right.timestampLastMessage ?? 0)
+    );
+  }
+
+  return compareDescending(left.timestampLastMessage ?? 0, right.timestampLastMessage ?? 0);
+}
+
+function isUrgentOutcome(outcome) {
+  return outcome.urgencyLevel === "urgent" || deriveQueueReason(outcome) === "urgent";
+}
+
+function compareDescending(left, right) {
+  return right - left;
+}
+
+function compareAscending(left, right) {
+  return left - right;
+}
+
+function getReviewedConversationMap() {
+  try {
+    return JSON.parse(localStorage.getItem(REVIEWED_STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveReviewedConversationMap(value) {
+  localStorage.setItem(REVIEWED_STORAGE_KEY, JSON.stringify(value));
+}
+
+function isConversationReviewed(conversationId) {
+  const reviewed = getReviewedConversationMap();
+  return Boolean(reviewed[conversationId]);
+}
+
+function toggleConversationReviewed(conversationId) {
+  const reviewed = getReviewedConversationMap();
+  if (reviewed[conversationId]) {
+    delete reviewed[conversationId];
+  } else {
+    reviewed[conversationId] = {
+      reviewedAt: Date.now(),
+    };
+  }
+  saveReviewedConversationMap(reviewed);
+}
+
+function updateReviewedButtonState() {
+  const conversationId = currentConversationBundle?.conversationId;
+  const reviewed = conversationId ? isConversationReviewed(conversationId) : false;
+  markReviewedButton.textContent = reviewed ? "Unreview" : "Mark Reviewed";
 }
 
 function showConversationError(error) {
