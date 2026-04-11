@@ -138,7 +138,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toContain("dispatch team");
   });
 
-  it("can use the OpenAI runtime path to offer real slots through typed tools", async () => {
+  it("submits a lead through the OpenAI runtime path instead of offering slots", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
@@ -178,21 +178,7 @@ describe("BookSmart chat flow", () => {
         ok: true,
         json: async () => ({
           id: "resp_1",
-          output: [
-            {
-              type: "function_call",
-              call_id: "call_1",
-              name: "get_availability",
-              arguments: "{}",
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: "resp_2",
-          output_text: "I found Monday at 9:00 AM, Tuesday at 9:00 AM, or Wednesday at 9:00 AM in the morning. Do any of those work for you?",
+          output_text: "Thanks, I have what I need to send this to dispatch.",
         }),
       });
 
@@ -207,14 +193,12 @@ describe("BookSmart chat flow", () => {
       aiConfig,
     );
 
-    expect(reply.stage).toBe("offer_slots");
-    expect(reply.options).toHaveLength(3);
-    expect(reply.replyText).toContain("Do any of those work for you?");
+    expect(reply.stage).toBe("lead_submitted");
+    expect(reply.leadId).toContain("lead-");
+    expect(reply.replyText.toLowerCase()).toContain("dispatch");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "get_availability")).toBe(
-      true,
-    );
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
   });
 
   it("can use the OpenAI runtime path to store structured fields before asking the next question", async () => {
@@ -279,7 +263,7 @@ describe("BookSmart chat flow", () => {
     ).toBe(true);
   });
 
-  it("can use the OpenAI runtime path to resolve a chosen slot and book it", async () => {
+  it("ignores legacy offered-slot state and still submits a lead in launch mode", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
@@ -339,48 +323,13 @@ describe("BookSmart chat flow", () => {
 
     await storage.storeChatSession(sessionState.sessionId, sessionState);
 
-    const selectedSlotOptionId = [
-      lastOfferedOptions[1]!.start,
-      lastOfferedOptions[1]!.end,
-      lastOfferedOptions[1]!.technician,
-      lastOfferedOptions[1]!.bookingTarget,
-    ].join("__");
-
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          id: "resp_book_1",
-          output: [
-            {
-              type: "function_call",
-              call_id: "call_book_1",
-              name: "resolve_slot_selection",
-              arguments: JSON.stringify({ customerText: "the second one works" }),
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: "resp_book_2",
-          output: [
-            {
-              type: "function_call",
-              call_id: "call_book_2",
-              name: "create_booking",
-              arguments: JSON.stringify({ slotOptionId: selectedSlotOptionId }),
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
           id: "resp_book_3",
-          output_text: "You’re all set. I booked you for Tuesday at 9:00 AM.",
+          output_text: "I’ll send this to dispatch for follow-up.",
         }),
       });
 
@@ -395,26 +344,21 @@ describe("BookSmart chat flow", () => {
       aiConfig,
     );
 
-    expect(reply.stage).toBe("booked");
-    expect(reply.bookingId).toContain("mock-");
-    expect(reply.replyText).toContain("Tuesday at 9:00 AM");
+    expect(reply.stage).toBe("lead_submitted");
+    expect(reply.leadId).toContain("lead-");
+    expect(reply.replyText.toLowerCase()).toContain("dispatch");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
-    expect(
-      messages.some((message) => message.direction === "tool" && message.toolName === "resolve_slot_selection"),
-    ).toBe(true);
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_booking")).toBe(
-      true,
-    );
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
     const decisionTrace = messages.find(
       (message) => message.direction === "tool" && message.toolName === "openai_decision_trace",
     );
-    expect(decisionTrace?.toolCallSummary).toContain("resolve_slot_selection");
+    expect(decisionTrace?.toolCallSummary).toContain("without tool calls");
     expect(Array.isArray(decisionTrace?.metadata?.trace)).toBe(true);
 
     const outcome = await storage.getConversationOutcome("booksmart-ai-book");
     expect(outcome?.bookedYesNo).toBe(true);
-    expect(outcome?.slotSelected).toBe(true);
+    expect(outcome?.finalBookingStatus).toBe("lead_submitted");
   });
 
   it("hands off urgent issues instead of continuing normal booking", async () => {
