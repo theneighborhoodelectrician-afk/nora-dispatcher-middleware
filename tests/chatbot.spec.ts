@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_BOOKSMART_CONFIG } from "../src/booksmart/defaultConfig.js";
+import { createInitialAnalytics } from "../src/conversations/tracking.js";
 import { AppConfig } from "../src/config.js";
-import { handleChatMessage } from "../src/services/chatbot.js";
+import { ChatSessionState, handleChatMessage } from "../src/services/chatbot.js";
 import { MemoryStorageAdapter } from "../src/storage/memory.js";
 
 const config: AppConfig = {
@@ -14,6 +15,11 @@ const config: AppConfig = {
     maxLookaheadDays: 5,
     minLeadHours: 2,
     bufferMinutes: 30,
+  },
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-5-mini",
+    enabled: false,
   },
   hcp: {
     baseUrl: "https://api.housecallpro.com",
@@ -39,6 +45,8 @@ describe("BookSmart chat flow", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("asks for city first before collecting booking details", async () => {
@@ -123,6 +131,85 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("offer_slots");
     expect(reply.options).toHaveLength(3);
     expect(reply.replyText.toLowerCase()).toContain("morning");
+  });
+
+  it("can use the OpenAI runtime path to offer real slots through typed tools", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
+
+    const sessionState: ChatSessionState = {
+      sessionId: "booksmart-ai-slots",
+      stage: "collect_preferred_window",
+      customer: {
+        city: "Sterling Heights",
+        requestedService: "Recessed lighting",
+        address: "123 Main St",
+        zipCode: "48313",
+        firstName: "Jane",
+        phone: "555-111-2222",
+      },
+      bookingStatus: "collecting",
+      transcript: [],
+      analytics: createInitialAnalytics(
+        new Date("2026-04-04T11:00:00.000Z").getTime(),
+        "hello",
+        "website",
+      ),
+    };
+
+    await storage.storeChatSession(sessionState.sessionId, sessionState);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_1",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_1",
+              name: "get_availability",
+              arguments: "{}",
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_2",
+          output_text: "I found Monday at 9:00 AM, Tuesday at 9:00 AM, or Wednesday at 9:00 AM in the morning. Do any of those work for you?",
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-slots",
+        text: "Morning works best",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.stage).toBe("offer_slots");
+    expect(reply.options).toHaveLength(3);
+    expect(reply.replyText).toContain("Do any of those work for you?");
+
+    const messages = await storage.listConversationMessages("booksmart-ai-slots");
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "get_availability")).toBe(
+      true,
+    );
   });
 
   it("hands off urgent issues instead of continuing normal booking", async () => {

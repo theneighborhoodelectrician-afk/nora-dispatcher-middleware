@@ -6,8 +6,15 @@ const views = Array.from(document.querySelectorAll(".view"));
 const conversationList = document.getElementById("conversation-list");
 const conversationDetail = document.getElementById("conversation-detail");
 const detailId = document.getElementById("detail-id");
+const copySummaryButton = document.getElementById("copy-summary");
+const copyTranscriptButton = document.getElementById("copy-transcript");
+const openRelatedConfigButton = document.getElementById("open-related-config");
+const conversationStats = document.getElementById("conversation-stats");
 const refreshConversationsButton = document.getElementById("refresh-conversations");
 const conversationLimitInput = document.getElementById("conversation-limit");
+const conversationSearchInput = document.getElementById("conversation-search");
+const conversationStatusFilter = document.getElementById("conversation-status-filter");
+const conversationLeadFilter = document.getElementById("conversation-lead-filter");
 const configEditor = document.getElementById("config-editor");
 const configStatus = document.getElementById("config-status");
 const loadConfigButton = document.getElementById("load-config");
@@ -19,6 +26,9 @@ const conversationRequestPhotosContainer = document.getElementById("conversation
 const allowedCitiesInput = document.getElementById("service-areas-allowed");
 const restrictedCitiesInput = document.getElementById("service-areas-restricted");
 const serviceAreaBehaviorSelect = document.getElementById("service-areas-behavior");
+const bookingRulesSameDaySelect = document.getElementById("booking-rules-same-day");
+const bookingRulesMinimumNoticeInput = document.getElementById("booking-rules-minimum-notice");
+const bookingRulesWindowsContainer = document.getElementById("booking-rules-windows");
 const urgencyKeywordsList = document.getElementById("urgency-keywords-list");
 const addUrgencyKeywordButton = document.getElementById("add-urgency-keyword");
 const serviceTypeList = document.getElementById("service-type-list");
@@ -30,6 +40,10 @@ const PHOTO_CATEGORIES = [
   { value: "service_call", label: "Service calls" },
   { value: "estimate", label: "Estimates" },
   { value: "urgent", label: "Urgent jobs" },
+];
+const BOOKING_WINDOWS = [
+  { value: "morning", label: "Morning" },
+  { value: "afternoon", label: "Afternoon" },
 ];
 const SERVICE_TYPE_CATEGORIES = [
   { value: "service_call", label: "Service call" },
@@ -49,6 +63,8 @@ const SKILL_TAGS = [
 
 let currentConfig = null;
 let selectedServiceTypeId = null;
+let currentOutcomes = [];
+let currentConversationBundle = null;
 
 boot();
 
@@ -78,6 +94,23 @@ function bindEvents() {
 
   conversationLimitInput.addEventListener("change", () => {
     loadConversations().catch(showConversationError);
+  });
+
+  [conversationSearchInput, conversationStatusFilter, conversationLeadFilter].forEach((element) => {
+    element.addEventListener("input", renderConversationList);
+    element.addEventListener("change", renderConversationList);
+  });
+
+  copySummaryButton.addEventListener("click", () => {
+    copyConversationSummary().catch(showConversationError);
+  });
+
+  copyTranscriptButton.addEventListener("click", () => {
+    copyConversationTranscript().catch(showConversationError);
+  });
+
+  openRelatedConfigButton.addEventListener("click", () => {
+    openRelatedConfigSection();
   });
 
   loadConfigButton.addEventListener("click", () => {
@@ -134,6 +167,8 @@ function bindEvents() {
     allowedCitiesInput,
     restrictedCitiesInput,
     serviceAreaBehaviorSelect,
+    bookingRulesSameDaySelect,
+    bookingRulesMinimumNoticeInput,
   ].forEach((element) => {
     element.addEventListener("input", updateConfigFromForms);
     element.addEventListener("change", updateConfigFromForms);
@@ -145,7 +180,14 @@ async function loadConversations() {
   const limit = Number(conversationLimitInput.value) || 25;
   const response = await adminFetch(`/api/admin/conversations?limit=${limit}`);
   const payload = await response.json();
-  const outcomes = payload.outcomes ?? [];
+  currentOutcomes = payload.outcomes ?? [];
+  renderConversationLeadFilter(currentOutcomes);
+  renderConversationStats(currentOutcomes);
+  renderConversationList();
+}
+
+function renderConversationList() {
+  const outcomes = filterConversationOutcomes(currentOutcomes);
 
   if (!outcomes.length) {
     conversationList.innerHTML = '<div class="detail-empty">No conversations tracked yet.</div>';
@@ -163,9 +205,10 @@ async function loadConversations() {
       <strong>${escapeHtml(outcome.conversationId)}</strong>
       <div class="badge-row">
         <span class="badge">${escapeHtml(outcome.leadSource)}</span>
-        <span class="badge">${escapeHtml(outcome.finalBookingStatus ?? "in_progress")}</span>
+        <span class="badge ${escapeHtml(statusBadgeClass(outcome))}">${escapeHtml(outcome.finalBookingStatus ?? "in_progress")}</span>
       </div>
       <p>${escapeHtml(outcome.classifiedServiceType ?? outcome.firstCustomerMessage)}</p>
+      <div class="summary">${escapeHtml(outcome.systemSummary ?? outcome.abandonmentStage ?? "No summary yet.")}</div>
       <div class="list-meta">
         <span>Booked: ${outcome.bookedYesNo ? "yes" : "no"}</span>
         <span>Handoff: ${outcome.handoffYesNo ? "yes" : "no"}</span>
@@ -186,6 +229,7 @@ async function loadConversationDetail(conversationId) {
   conversationDetail.innerHTML = '<div class="detail-empty">Loading conversation detail…</div>';
   const response = await adminFetch(`/api/admin/conversations?conversationId=${encodeURIComponent(conversationId)}`);
   const payload = await response.json();
+  currentConversationBundle = payload;
 
   const stages = payload.stages ?? [];
   const messages = payload.messages ?? [];
@@ -194,9 +238,26 @@ async function loadConversationDetail(conversationId) {
   const bookingEvents = payload.bookingEvents ?? [];
   const handoffEvents = payload.handoffEvents ?? [];
   const outcome = payload.outcome ?? {};
+  const lastStage = stages.at(-1)?.stage ?? "unknown";
 
   conversationDetail.innerHTML = `
     <div class="detail-grid">
+      <section class="detail-summary">
+        <div class="badge-row">
+          <span class="badge">${escapeHtml(outcome.leadSource ?? "unknown")}</span>
+          <span class="badge ${escapeHtml(statusBadgeClass(outcome))}">${escapeHtml(outcome.finalBookingStatus ?? "in_progress")}</span>
+          <span class="badge">${escapeHtml(outcome.classifiedServiceType ?? "unclassified")}</span>
+        </div>
+        <p>${escapeHtml(outcome.systemSummary ?? "No internal summary yet.")}</p>
+        <div class="list-meta">
+          <span>Last stage: ${escapeHtml(lastStage)}</span>
+          <span>Urgency: ${escapeHtml(outcome.urgencyLevel ?? "normal")}</span>
+          <span>Abandonment stage: ${escapeHtml(outcome.abandonmentStage ?? "n/a")}</span>
+        </div>
+        <div class="detail-actions">
+          <span class="status-text">Use the quick actions above to copy this review or jump to the related config section.</span>
+        </div>
+      </section>
       ${renderBlock("Outcome", [
         `Lead source: ${escapeHtml(outcome.leadSource ?? "unknown")}`,
         `Service type: ${escapeHtml(outcome.classifiedServiceType ?? "n/a")}`,
@@ -239,6 +300,145 @@ async function saveConfig() {
   configStatus.textContent = "Config saved.";
 }
 
+function renderConversationStats(outcomes) {
+  const booked = outcomes.filter((outcome) => outcome.bookedYesNo).length;
+  const handoff = outcomes.filter((outcome) => outcome.handoffYesNo).length;
+  const urgent = outcomes.filter((outcome) => outcome.urgencyLevel === "urgent").length;
+  const inProgress = outcomes.length - booked - handoff;
+
+  conversationStats.innerHTML = [
+    statCard("Tracked", outcomes.length, "Recent conversation outcomes in the selected sample."),
+    statCard("Booked", booked, "Completed bookings from tracked flows."),
+    statCard("Handoff", handoff, "Requests that escalated to a human."),
+    statCard("Urgent", urgent, "Conversations marked urgent by configured signals."),
+    statCard("In Progress", Math.max(inProgress, 0), "Conversations without a final booked or handoff outcome."),
+  ].join("");
+}
+
+function renderConversationLeadFilter(outcomes) {
+  const selected = conversationLeadFilter.value;
+  const leadSources = [...new Set(outcomes.map((outcome) => outcome.leadSource).filter(Boolean))].sort();
+  conversationLeadFilter.innerHTML = '<option value="">All lead sources</option>';
+  leadSources.forEach((leadSource) => {
+    const option = document.createElement("option");
+    option.value = leadSource;
+    option.textContent = leadSource;
+    if (leadSource === selected) {
+      option.selected = true;
+    }
+    conversationLeadFilter.appendChild(option);
+  });
+}
+
+async function copyConversationSummary() {
+  if (!currentConversationBundle?.outcome) {
+    throw new Error("Load a conversation first.");
+  }
+
+  const outcome = currentConversationBundle.outcome;
+  const stages = currentConversationBundle.stages ?? [];
+  const summary = [
+    `Conversation: ${currentConversationBundle.conversationId}`,
+    `Lead source: ${outcome.leadSource ?? "unknown"}`,
+    `Service type: ${outcome.classifiedServiceType ?? "n/a"}`,
+    `Status: ${outcome.finalBookingStatus ?? "in_progress"}`,
+    `Booked: ${outcome.bookedYesNo ? "yes" : "no"}`,
+    `Handoff: ${outcome.handoffYesNo ? "yes" : "no"}`,
+    `Urgency: ${outcome.urgencyLevel ?? "normal"}`,
+    `Last stage: ${stages.at(-1)?.stage ?? "unknown"}`,
+    `Summary: ${outcome.systemSummary ?? "No internal summary yet."}`,
+  ].join("\n");
+
+  await navigator.clipboard.writeText(summary);
+  conversationDetail.dataset.notice = "Summary copied.";
+}
+
+async function copyConversationTranscript() {
+  if (!currentConversationBundle?.messages?.length) {
+    throw new Error("Load a conversation with transcript messages first.");
+  }
+
+  const transcript = currentConversationBundle.messages
+    .map((message) => `[${formatTime(message.timestamp)}] ${message.direction}${message.toolName ? `:${message.toolName}` : ""} ${message.text ?? message.toolCallSummary ?? ""}`)
+    .join("\n");
+
+  await navigator.clipboard.writeText(transcript);
+  conversationDetail.dataset.notice = "Transcript copied.";
+}
+
+function openRelatedConfigSection() {
+  if (!currentConversationBundle?.outcome) {
+    showConfigError(new Error("Load a conversation first."));
+    return;
+  }
+
+  const outcome = currentConversationBundle.outcome;
+  navButtons.forEach((item) => item.classList.toggle("active", item.dataset.view === "config"));
+  views.forEach((view) => view.classList.toggle("active", view.id === "view-config"));
+
+  if (outcome.handoffYesNo && outcome.urgencyLevel === "urgent") {
+    urgencyKeywordsList.scrollIntoView({ behavior: "smooth", block: "start" });
+    configStatus.textContent = "Jumped to urgency keywords for this conversation.";
+    return;
+  }
+
+  if (outcome.classifiedServiceType) {
+    const matchingServiceType = currentConfig?.serviceTypes?.find((serviceType) =>
+      serviceType.id === outcome.classifiedServiceType ||
+      serviceType.requestedServiceLabel === outcome.classifiedServiceType ||
+      serviceType.displayName === outcome.classifiedServiceType,
+    );
+    if (matchingServiceType) {
+      selectedServiceTypeId = matchingServiceType.id;
+      renderServiceTypes(currentConfig.serviceTypes);
+      serviceTypeEditor.scrollIntoView({ behavior: "smooth", block: "start" });
+      configStatus.textContent = `Jumped to service type ${matchingServiceType.displayName}.`;
+      return;
+    }
+  }
+
+  if (outcome.handoffYesNo && outcome.abandonmentStage === "collect_city") {
+    allowedCitiesInput.scrollIntoView({ behavior: "smooth", block: "start" });
+    configStatus.textContent = "Jumped to service areas for this conversation.";
+    return;
+  }
+
+  conversationOpeningQuestionInput.scrollIntoView({ behavior: "smooth", block: "start" });
+  configStatus.textContent = "Jumped to conversation settings.";
+}
+
+function filterConversationOutcomes(outcomes) {
+  const search = conversationSearchInput.value.trim().toLowerCase();
+  const status = conversationStatusFilter.value;
+  const leadSource = conversationLeadFilter.value;
+
+  return outcomes.filter((outcome) => {
+    const statusValue = normalizeOutcomeStatus(outcome);
+    const searchTarget = [
+      outcome.conversationId,
+      outcome.classifiedServiceType,
+      outcome.firstCustomerMessage,
+      outcome.systemSummary,
+      outcome.abandonmentStage,
+      outcome.leadSource,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    if (search && !searchTarget.includes(search)) {
+      return false;
+    }
+    if (status && statusValue !== status) {
+      return false;
+    }
+    if (leadSource && outcome.leadSource !== leadSource) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function updateConfigFromForms() {
   ensureCurrentConfig();
   currentConfig.conversation.openingQuestion = conversationOpeningQuestionInput.value;
@@ -250,6 +450,11 @@ function updateConfigFromForms() {
   currentConfig.serviceAreas.allowedCities = textAreaToLines(allowedCitiesInput.value);
   currentConfig.serviceAreas.restrictedCities = textAreaToLines(restrictedCitiesInput.value);
   currentConfig.serviceAreas.outsideAreaBehavior = serviceAreaBehaviorSelect.value;
+  currentConfig.bookingRules.sameDayAllowed = bookingRulesSameDaySelect.value === "true";
+  currentConfig.bookingRules.minimumNoticeHours = Number(bookingRulesMinimumNoticeInput.value) || 0;
+  currentConfig.bookingRules.allowedWindows = Array.from(
+    bookingRulesWindowsContainer.querySelectorAll('input[type="checkbox"]:checked'),
+  ).map((input) => input.value);
   currentConfig.urgencyKeywords = Array.from(urgencyKeywordsList.querySelectorAll(".stack-row")).map((row) => ({
     phrase: row.querySelector('[data-role="phrase"]').value,
     level: row.querySelector('[data-role="level"]').value,
@@ -283,8 +488,11 @@ function populateConfigForms(config) {
   allowedCitiesInput.value = (config.serviceAreas.allowedCities ?? []).join("\n");
   restrictedCitiesInput.value = (config.serviceAreas.restrictedCities ?? []).join("\n");
   serviceAreaBehaviorSelect.value = config.serviceAreas.outsideAreaBehavior ?? "handoff";
+  bookingRulesSameDaySelect.value = String(config.bookingRules.sameDayAllowed ?? true);
+  bookingRulesMinimumNoticeInput.value = String(config.bookingRules.minimumNoticeHours ?? 0);
 
   renderRequestPhotoCheckboxes(config.conversation.requestPhotosFor ?? []);
+  renderBookingWindows(config.bookingRules.allowedWindows ?? []);
   renderUrgencyKeywords(config.urgencyKeywords ?? []);
   renderServiceTypes(config.serviceTypes ?? []);
 }
@@ -402,6 +610,20 @@ function renderRequestPhotoCheckboxes(selectedValues) {
   });
 }
 
+function renderBookingWindows(selectedValues) {
+  bookingRulesWindowsContainer.innerHTML = "";
+  BOOKING_WINDOWS.forEach((windowOption) => {
+    const label = document.createElement("label");
+    label.className = "checkbox-item";
+    label.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(windowOption.value)}" ${selectedValues.includes(windowOption.value) ? "checked" : ""} />
+      <span>${escapeHtml(windowOption.label)}</span>
+    `;
+    label.querySelector("input").addEventListener("change", updateConfigFromForms);
+    bookingRulesWindowsContainer.appendChild(label);
+  });
+}
+
 function renderUrgencyKeywords(keywords) {
   urgencyKeywordsList.innerHTML = "";
   if (!keywords.length) {
@@ -466,6 +688,16 @@ function renderBlock(title, items) {
   `;
 }
 
+function statCard(title, value, detail) {
+  return `
+    <section class="stat-card">
+      <span class="eyebrow">${escapeHtml(title)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      <div class="status-text">${escapeHtml(detail)}</div>
+    </section>
+  `;
+}
+
 function showConversationError(error) {
   conversationList.innerHTML = `<div class="detail-empty">${escapeHtml(error.message)}</div>`;
 }
@@ -480,6 +712,30 @@ function formatTime(timestamp) {
   }
 
   return new Date(timestamp).toLocaleString();
+}
+
+function normalizeOutcomeStatus(outcome) {
+  if (outcome.bookedYesNo || outcome.finalBookingStatus === "booked") {
+    return "booked";
+  }
+  if (outcome.handoffYesNo || outcome.finalBookingStatus === "handoff" || outcome.finalBookingStatus === "human_escalation_required") {
+    return "handoff";
+  }
+  if (outcome.availabilityShown) {
+    return "slots_available";
+  }
+  return "in_progress";
+}
+
+function statusBadgeClass(outcome) {
+  const status = normalizeOutcomeStatus(outcome);
+  if (status === "booked") {
+    return "booked";
+  }
+  if (status === "handoff") {
+    return "handoff";
+  }
+  return "in-progress";
 }
 
 function textAreaToLines(value) {

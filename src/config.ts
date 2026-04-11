@@ -34,6 +34,12 @@ function readBoolean(name: string, fallback: boolean): boolean {
 export interface AppConfig {
   environment: string;
   scheduling: SchedulingSettings;
+  openai: {
+    apiKey?: string;
+    baseUrl: string;
+    model: string;
+    enabled: boolean;
+  };
   hcp: {
     baseUrl: string;
     token?: string;
@@ -70,6 +76,12 @@ export function getConfig(): AppConfig {
       maxLookaheadDays: readNumber("MAX_LOOKAHEAD_DAYS", 7),
       minLeadHours: readNumber("MIN_LEAD_HOURS", 2),
       bufferMinutes: readNumber("BUFFER_MINUTES", 30),
+    },
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY,
+      baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+      enabled: readBoolean("OPENAI_RESPONSES_ENABLED", Boolean(process.env.OPENAI_API_KEY)),
     },
     hcp: {
       baseUrl: process.env.HCP_API_BASE_URL ?? "https://api.housecallpro.com",

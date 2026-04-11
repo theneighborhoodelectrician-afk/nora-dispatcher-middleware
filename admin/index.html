@@ -42,14 +42,31 @@
             <button id="refresh-conversations" type="button">Refresh</button>
           </div>
 
+          <div class="stats-grid" id="conversation-stats"></div>
+
           <div class="layout-grid">
             <section class="card panel">
               <div class="panel-header">
                 <h3>Recent Outcomes</h3>
-                <label class="limit-control">
-                  <span>Limit</span>
-                  <input id="conversation-limit" type="number" min="1" max="200" value="25" />
-                </label>
+                <div class="filter-row">
+                  <label class="limit-control">
+                    <span>Limit</span>
+                    <input id="conversation-limit" type="number" min="1" max="200" value="25" />
+                  </label>
+                </div>
+              </div>
+              <div class="conversation-filters">
+                <input id="conversation-search" type="search" placeholder="Search by conversation, service, or summary" />
+                <select id="conversation-status-filter">
+                  <option value="">All statuses</option>
+                  <option value="booked">Booked</option>
+                  <option value="handoff">Handoff</option>
+                  <option value="slots_available">Availability shown</option>
+                  <option value="in_progress">In progress</option>
+                </select>
+                <select id="conversation-lead-filter">
+                  <option value="">All lead sources</option>
+                </select>
               </div>
               <div id="conversation-list" class="list"></div>
             </section>
@@ -57,7 +74,12 @@
             <section class="card panel detail-panel">
               <div class="panel-header">
                 <h3>Conversation Detail</h3>
-                <code id="detail-id">Select a conversation</code>
+                <div class="button-row">
+                  <code id="detail-id">Select a conversation</code>
+                  <button id="copy-summary" type="button">Copy Summary</button>
+                  <button id="copy-transcript" type="button">Copy Transcript</button>
+                  <button id="open-related-config" type="button">Open Related Config</button>
+                </div>
               </div>
               <div id="conversation-detail" class="detail-empty">
                 Choose a conversation outcome to load stages, transcript messages, slot exposure, urgency hits, booking events, and handoffs.
@@ -138,6 +160,29 @@
                     <option value="handoff">Handoff</option>
                   </select>
                 </label>
+              </div>
+            </section>
+
+            <section class="card panel">
+              <div class="panel-header">
+                <h3>Booking Rules</h3>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Same-day allowed</span>
+                  <select id="booking-rules-same-day">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Minimum notice hours</span>
+                  <input id="booking-rules-minimum-notice" type="number" min="0" />
+                </label>
+                <fieldset class="field field-wide">
+                  <legend>Allowed windows</legend>
+                  <div class="checkbox-grid" id="booking-rules-windows"></div>
+                </fieldset>
               </div>
             </section>
 

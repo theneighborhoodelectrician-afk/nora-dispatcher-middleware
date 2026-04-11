@@ -25,13 +25,13 @@ What is new in this phase:
 - `src/tools/booksmart.ts` for typed booking/chat tools
 - `src/channels/blooio/normalize.ts` for inbound channel normalization
 - A city-first BookSmart chat orchestration flow in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/services/chatbot.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/services/chatbot.ts)
+- Optional OpenAI Responses orchestration in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/services/openaiResponses.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/services/openaiResponses.ts) with a compact system prompt in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/prompts/booksmartSystemPrompt.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/prompts/booksmartSystemPrompt.ts)
 
 Still planned:
 
-- OpenAI Responses API orchestration
-- database-backed editable operator config
-- internal `/admin` operator console
-- richer conversation persistence beyond chat sessions
+- richer operator-console UX
+- fuller conversation-state modeling outside the current chat/session spine
+- deeper typed tool coverage as the AI runtime expands
 
 ## Admin API
 
@@ -58,8 +58,25 @@ Current capabilities:
 - view recent structured conversation outcomes
 - inspect a full conversation record with stages, transcript, slot exposure, urgency hits, bookings, and handoffs
 - load and save the full BookSmart config JSON through the authenticated admin API
+- edit conversation settings, service areas, urgency keywords, service types, and booking rules with structured forms
+- filter/search conversations and use quick actions from the detail panel
 
 This UI is intentionally thin in v1. It is a static internal surface over the admin APIs, not yet a fully modeled operator dashboard.
+
+## OpenAI runtime
+
+BookSmart now has an optional OpenAI Responses runtime path layered on top of the existing typed tools.
+
+- It is off unless `OPENAI_RESPONSES_ENABLED=true` or an `OPENAI_API_KEY` is present
+- It uses the existing typed BookSmart tools for service area checks, service classification, live availability, booking, photo requests, and human handoff
+- If the OpenAI request fails, chat falls back to the existing deterministic flow
+- Housecall Pro remains the source of truth for availability and booking writes
+
+Assumptions in the current implementation:
+
+- the AI runtime is an optional orchestration layer, not a replacement for the underlying HCP-backed booking logic
+- simple field extraction such as phone, zip, and preferred window still uses local heuristics around the AI runtime
+- outside-area and urgent handoff rules are enforced locally even if the model output is imperfect
 
 ## Conversation Tracking
 
@@ -173,6 +190,10 @@ DEFAULT_SLOT_COUNT=3
 MAX_LOOKAHEAD_DAYS=7
 MIN_LEAD_HOURS=2
 BUFFER_MINUTES=30
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-5-mini
+OPENAI_RESPONSES_ENABLED=false
 HCP_API_BASE_URL=https://api.housecallpro.com
 HCP_API_TOKEN=
 HCP_COMPANY_ID=
@@ -182,6 +203,7 @@ HCP_SCHEDULE_PATH=/jobs
 HCP_CREATE_JOB_PATH=/jobs
 HCP_CREATE_ESTIMATE_PATH=/public/v1/estimates
 GHL_WEBHOOK_SECRET=
+ADMIN_SECRET=
 POSTGRES_URL=
 AUTO_INIT_STORAGE=true
 ```

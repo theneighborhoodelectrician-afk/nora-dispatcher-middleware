@@ -15,6 +15,11 @@ const config: AppConfig = {
     minLeadHours: 2,
     bufferMinutes: 30,
   },
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-5-mini",
+    enabled: false,
+  },
   hcp: {
     baseUrl: "https://api.housecallpro.com",
     customerPath: "/customers",

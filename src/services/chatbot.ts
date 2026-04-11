@@ -4,6 +4,7 @@ import { BookSmartServiceTypeId } from "../booksmart/types.js";
 import { normalizeBlooioInboundPayload } from "../channels/blooio/normalize.js";
 import { AppConfig } from "../config.js";
 import {
+  buildSlotOptionId,
   createInitialAnalytics,
   inferPhotoSent,
   mergeUrgencyKeywords,
@@ -17,6 +18,7 @@ import {
 import { ConversationStage, LeadSourceCode } from "../conversations/types.js";
 import { CustomerRequest, PresentedSlotOption } from "../domain/types.js";
 import { AppError } from "../lib/errors.js";
+import { buildBookSmartSystemPrompt } from "../prompts/booksmartSystemPrompt.js";
 import { chatWebhookSchema } from "../schemas/chat.js";
 import { StorageAdapter } from "../storage/types.js";
 import {
@@ -24,11 +26,13 @@ import {
   classifyServiceType,
   createBookingTool,
   detectUrgency,
+  findOrCreateCustomerTool,
   getServiceTypeById,
   getAvailabilityTool,
   handoffToHuman,
   requestPhoto,
 } from "../tools/booksmart.js";
+import { OpenAiFunctionTool, runOpenAiResponses } from "./openaiResponses.js";
 
 type ChatStage =
   | "collect_city"
@@ -127,6 +131,21 @@ export async function handleChatMessage(
       messageId: normalized.messageId,
     },
   });
+
+  if (config.openai.enabled && config.openai.apiKey) {
+    const aiReply = await tryHandleChatMessageWithOpenAi(
+      storage,
+      config,
+      bookSmartConfig,
+      state,
+      messageText,
+      sessionId,
+      now,
+    );
+    if (aiReply) {
+      return aiReply;
+    }
+  }
 
   if (state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
     const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
@@ -786,4 +805,589 @@ async function persistUrgencyHits(
       timestamp,
     });
   }
+}
+
+async function tryHandleChatMessageWithOpenAi(
+  storage: StorageAdapter,
+  config: AppConfig,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  state: ChatSessionState,
+  messageText: string,
+  sessionId: string,
+  timestamp: number,
+): Promise<ChatReplyPayload | undefined> {
+  try {
+    applyHeuristicUpdates(state, messageText, timestamp);
+
+    const tools = createOpenAiTools(storage, config, bookSmartConfig, state, messageText, timestamp);
+    const result = await runOpenAiResponses({
+      apiKey: config.openai.apiKey!,
+      baseUrl: config.openai.baseUrl,
+      model: config.openai.model,
+      systemPrompt: buildBookSmartSystemPrompt(bookSmartConfig),
+      inputText: buildOpenAiInput(state, messageText, bookSmartConfig),
+      tools,
+    });
+
+    const enforcedReply = await enforceBookSmartGuards(storage, state, bookSmartConfig, sessionId, timestamp);
+    if (enforcedReply) {
+      return enforcedReply;
+    }
+
+    if (!result.outputText) {
+      return undefined;
+    }
+
+    state.stage = deriveStageFromState(state);
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: result.outputText,
+      stage: state.stage,
+      options: state.stage === "offer_slots" ? state.lastOfferedOptions : undefined,
+      handoffRequired: state.stage === "human_handoff" ? true : undefined,
+    }, timestamp);
+  } catch (error) {
+    console.warn("BookSmart OpenAI orchestration failed, falling back to deterministic flow.", error);
+    return undefined;
+  }
+}
+
+function createOpenAiTools(
+  storage: StorageAdapter,
+  config: AppConfig,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  state: ChatSessionState,
+  messageText: string,
+  timestamp: number,
+): OpenAiFunctionTool[] {
+  return [
+    {
+      name: "check_service_area",
+      description: "Validate whether a city is inside the configured service area.",
+      parameters: {
+        type: "object",
+        properties: {
+          city: {
+            type: "string",
+            description: "Customer project city.",
+          },
+        },
+        required: ["city"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const city = readStringArg(args, "city") ?? state.customer.city;
+        if (city) {
+          state.customer.city = city;
+          await recordStageOnce(storage, state, "city_collected", timestamp, { city });
+        }
+
+        const decision = checkServiceArea(city, bookSmartConfig);
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "check_service_area",
+          toolCallSummary: `Checked service area for ${city ?? "unknown city"}.`,
+          metadata: {
+            ok: decision.ok,
+          },
+        });
+        return decision;
+      },
+    },
+    {
+      name: "classify_service_type",
+      description: "Classify the customer's service need into a configured service type and detect urgency.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: {
+            type: "string",
+            description: "Customer text describing the electrical issue or project.",
+          },
+        },
+        required: ["text"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const text = readStringArg(args, "text") ?? messageText;
+        const serviceMatch = classifyServiceType(text, bookSmartConfig);
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "classify_service_type",
+          toolCallSummary: "Classifying service type from customer message.",
+        });
+        setServiceDetails(state, text, bookSmartConfig);
+        await recordStageOnce(storage, state, "service_identified", timestamp, {
+          serviceTypeId: serviceMatch.serviceType.id,
+        });
+        return {
+          matched: serviceMatch.matched,
+          serviceTypeId: serviceMatch.serviceType.id,
+          displayName: serviceMatch.serviceType.displayName,
+          category: serviceMatch.serviceType.category,
+          urgency: state.urgency ?? "normal",
+        };
+      },
+    },
+    {
+      name: "request_photo",
+      description: "Check whether a photo should be requested for the current service type.",
+      parameters: {
+        type: "object",
+        properties: {
+          serviceTypeId: {
+            type: "string",
+            description: "Configured BookSmart service type id.",
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const serviceTypeId = readStringArg(args, "serviceTypeId") ?? state.serviceTypeId;
+        const serviceType = getServiceTypeById(serviceTypeId, bookSmartConfig);
+        if (!serviceType) {
+          return {
+            shouldRequestPhoto: false,
+          };
+        }
+
+        const response = requestPhoto(serviceType);
+        if (response.shouldRequestPhoto) {
+          state.analytics.photoRequested = true;
+          await recordStageOnce(storage, state, "photo_requested", timestamp, {
+            serviceTypeId: serviceType.id,
+          });
+        }
+        return response;
+      },
+    },
+    {
+      name: "find_or_create_customer",
+      description: "Find or create the customer record in Housecall Pro using known contact details.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: async () => {
+        const customer = toCustomerRequest(state.customer);
+        const result = await findOrCreateCustomerTool(customer, config);
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "find_or_create_customer",
+          toolCallSummary: `Synced customer for ${customer.phone}.`,
+        });
+        return result;
+      },
+    },
+    {
+      name: "get_availability",
+      description: "Check real availability in Housecall Pro using the current customer and job details.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: async () => {
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "get_availability",
+          toolCallSummary: `Checking live availability for ${state.customer.requestedService ?? "unknown service"}.`,
+        });
+        const availability = await getAvailabilityTool(toCustomerRequest(state.customer), config, bookSmartConfig);
+        state.lastOfferedOptions = availability.presentation.options;
+
+        if (availability.status === "slots_available" && availability.presentation.options?.length) {
+          state.stage = "offer_slots";
+          state.bookingStatus = "offered";
+          await recordSlotExposureSet(storage, state, availability.presentation.options, timestamp);
+          await recordStageOnce(storage, state, "availability_presented", timestamp, {
+            slotCount: availability.presentation.options.length,
+          });
+        } else {
+          state.stage = "human_handoff";
+          state.bookingStatus = "handoff";
+          await storage.appendHandoffEvent({
+            conversationId: state.sessionId,
+            reason: availability.status,
+            timestamp,
+          });
+          await recordStageOnce(storage, state, "escalated", timestamp, {
+            reason: availability.status,
+          });
+        }
+
+        return {
+          status: availability.status,
+          replyText: availability.presentation.replyText,
+          options: availability.presentation.options?.map((option) => ({
+            slotOptionId: buildSlotOptionId(option),
+            label: option.label,
+            start: option.start,
+            end: option.end,
+            technician: option.technician,
+          })),
+        };
+      },
+    },
+    {
+      name: "create_booking",
+      description: "Book one of the previously offered live slots in Housecall Pro.",
+      parameters: {
+        type: "object",
+        properties: {
+          slotOptionId: {
+            type: "string",
+            description: "The slotOptionId of the offered slot to book.",
+          },
+        },
+        required: ["slotOptionId"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const slotOptionId = readStringArg(args, "slotOptionId");
+        const selectedOption = selectSlotById(slotOptionId, state.lastOfferedOptions);
+        if (!selectedOption) {
+          return {
+            ok: false,
+            error: "No matching slot was available to book.",
+          };
+        }
+
+        await recordSlotSelection(storage, state, selectedOption, timestamp);
+        await recordStageOnce(storage, state, "slot_selected", timestamp, {
+          slotLabel: selectedOption.label,
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "create_booking",
+          toolCallSummary: `Booking requested for ${selectedOption.label}.`,
+        });
+        const booking = await createBookingTool(
+          toCustomerRequest(state.customer),
+          {
+            technician: selectedOption.technician,
+            start: selectedOption.start,
+            end: selectedOption.end,
+            bookingTarget: selectedOption.bookingTarget,
+            label: selectedOption.label,
+            driveMinutes: 0,
+            reason: "Selected in BookSmart chat",
+            score: 0,
+            serviceCategory: "generic-electrical",
+          },
+          config,
+        );
+
+        if (booking.status === "booked") {
+          state.stage = "booked";
+          state.bookingStatus = "booked";
+          state.analytics.finalHcpJobType = selectedOption.bookingTarget;
+          await storage.appendBookingEvent({
+            conversationId: state.sessionId,
+            bookingExternalId: booking.externalId,
+            finalHcpJobType: selectedOption.bookingTarget,
+            bookingStatus: booking.status,
+            timestamp,
+            metadata: {
+              slotLabel: selectedOption.label,
+            },
+          });
+          await recordStageOnce(storage, state, "booked", timestamp, {
+            bookingId: booking.externalId,
+          });
+        } else if (booking.presentation.options?.length) {
+          state.lastOfferedOptions = booking.presentation.options;
+          state.stage = "offer_slots";
+          state.bookingStatus = "offered";
+          await recordSlotExposureSet(storage, state, booking.presentation.options, timestamp);
+          await recordStageOnce(storage, state, "availability_presented", timestamp, {
+            slotCount: booking.presentation.options.length,
+          });
+        } else {
+          state.stage = "human_handoff";
+          state.bookingStatus = "handoff";
+          await storage.appendBookingEvent({
+            conversationId: state.sessionId,
+            finalHcpJobType: selectedOption.bookingTarget,
+            bookingStatus: booking.status,
+            timestamp,
+          });
+          await storage.appendHandoffEvent({
+            conversationId: state.sessionId,
+            reason: "booking_fallback",
+            timestamp,
+            metadata: {
+              bookingStatus: booking.status,
+            },
+          });
+          await recordStageOnce(storage, state, "escalated", timestamp, {
+            reason: "booking_fallback",
+          });
+        }
+
+        return {
+          ok: booking.status === "booked",
+          status: booking.status,
+          bookingId: booking.externalId,
+          replyText: booking.presentation.replyText,
+          options: booking.presentation.options?.map((option) => ({
+            slotOptionId: buildSlotOptionId(option),
+            label: option.label,
+          })),
+        };
+      },
+    },
+    {
+      name: "handoff_to_human",
+      description: "Escalate the conversation to a human operator when policy requires handoff.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: {
+            type: "string",
+            enum: ["urgent", "outside_service_area", "fallback"],
+          },
+        },
+        required: ["reason"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const reason = normalizeHandoffReason(readStringArg(args, "reason"));
+        state.stage = "human_handoff";
+        state.bookingStatus = "handoff";
+        if (reason === "urgent") {
+          await persistUrgencyHits(storage, state, timestamp);
+        }
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason,
+          timestamp,
+          metadata: reason === "urgent" ? { keywords: state.analytics.urgencyKeywordsDetected } : undefined,
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp,
+          toolName: "handoff_to_human",
+          toolCallSummary: `Escalating ${reason} request to a human.`,
+        });
+        await recordStageOnce(storage, state, "escalated", timestamp, {
+          reason,
+        });
+        return handoffToHuman(reason);
+      },
+    },
+  ];
+}
+
+async function enforceBookSmartGuards(
+  storage: StorageAdapter,
+  state: ChatSessionState,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  sessionId: string,
+  timestamp: number,
+): Promise<ChatReplyPayload | undefined> {
+  if (state.urgency === "urgent" && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff") {
+    state.stage = "human_handoff";
+    state.bookingStatus = "handoff";
+    await persistUrgencyHits(storage, state, timestamp);
+    await storage.appendHandoffEvent({
+      conversationId: state.sessionId,
+      reason: "urgent",
+      timestamp,
+      metadata: {
+        keywords: state.analytics.urgencyKeywordsDetected,
+      },
+    });
+    await recordStageOnce(storage, state, "escalated", timestamp, {
+      reason: "urgent",
+    });
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: "This sounds urgent, so I’m having our team review it right away instead of continuing with normal booking.",
+      stage: state.stage,
+      handoffRequired: true,
+    }, timestamp);
+  }
+
+  if (state.customer.city && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff") {
+    const areaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
+    if (!areaDecision.ok) {
+      state.stage = "human_handoff";
+      state.bookingStatus = "handoff";
+      await storage.appendHandoffEvent({
+        conversationId: state.sessionId,
+        reason: "outside_service_area",
+        timestamp,
+        metadata: {
+          city: state.customer.city,
+        },
+      });
+      await recordStageOnce(storage, state, "escalated", timestamp, {
+        reason: "outside_service_area",
+      });
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "Thanks. That area needs a quick manual review from our team before we book it.",
+        stage: state.stage,
+        handoffRequired: true,
+      }, timestamp);
+    }
+  }
+
+  return undefined;
+}
+
+function buildOpenAiInput(
+  state: ChatSessionState,
+  latestMessage: string,
+  config: typeof DEFAULT_BOOKSMART_CONFIG,
+): string {
+  const transcript = state.transcript.slice(-8).map((entry) => ({
+    direction: entry.direction,
+    text: entry.text,
+  }));
+  const availableSlots = (state.lastOfferedOptions ?? []).map((option) => ({
+    slotOptionId: buildSlotOptionId(option),
+    label: option.label,
+    start: option.start,
+    end: option.end,
+    technician: option.technician,
+  }));
+
+  return JSON.stringify({
+    latestCustomerMessage: latestMessage,
+    stage: state.stage,
+    bookingStatus: state.bookingStatus,
+    customer: state.customer,
+    serviceTypeId: state.serviceTypeId,
+    urgency: state.urgency ?? "normal",
+    availableSlots,
+    transcript,
+    bookingRules: config.bookingRules,
+    conversationSettings: {
+      openingQuestion: config.conversation.openingQuestion,
+      handoffMessage: config.conversation.handoffMessage,
+      requestPhotosFor: config.conversation.requestPhotosFor,
+    },
+  });
+}
+
+function applyHeuristicUpdates(
+  state: ChatSessionState,
+  messageText: string,
+  timestamp: number,
+): void {
+  if (!state.customer.city && state.stage === "collect_city" && state.transcript.length > 1) {
+    state.customer.city = messageText;
+  }
+
+  if (!state.customer.address && state.stage === "collect_address") {
+    state.customer.address = messageText;
+    state.customer.zipCode = state.customer.zipCode ?? extractZipCode(messageText);
+  }
+
+  if (!state.customer.zipCode) {
+    state.customer.zipCode = extractZipCode(messageText) ?? state.customer.zipCode;
+  }
+
+  if (!state.customer.phone) {
+    state.customer.phone = extractPhoneNumber(messageText) ?? state.customer.phone;
+  }
+
+  if (!state.customer.firstName && state.stage === "collect_name") {
+    state.customer.firstName = inferFirstName(messageText);
+  }
+
+  if (!state.customer.preferredWindow) {
+    state.customer.preferredWindow = inferPreferredWindow(messageText) ?? state.customer.preferredWindow;
+  }
+
+  state.analytics.timestampStarted = Math.min(state.analytics.timestampStarted, timestamp);
+}
+
+function deriveStageFromState(state: ChatSessionState): ChatStage {
+  if (state.bookingStatus === "booked") {
+    return "booked";
+  }
+
+  if (state.bookingStatus === "handoff") {
+    return "human_handoff";
+  }
+
+  if (state.lastOfferedOptions?.length && state.bookingStatus === "offered") {
+    return "offer_slots";
+  }
+
+  if (!state.customer.city) {
+    return "collect_city";
+  }
+
+  if (!state.customer.requestedService) {
+    return "collect_service_type";
+  }
+
+  if (!state.customer.address) {
+    return "collect_address";
+  }
+
+  if (!state.customer.zipCode) {
+    return "collect_zip";
+  }
+
+  if (!state.customer.firstName) {
+    return "collect_name";
+  }
+
+  if (!state.customer.phone) {
+    return "collect_phone";
+  }
+
+  if (!state.customer.preferredWindow) {
+    return "collect_preferred_window";
+  }
+
+  return "collect_preferred_window";
+}
+
+function readStringArg(args: unknown, key: string): string | undefined {
+  if (!args || typeof args !== "object") {
+    return undefined;
+  }
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function selectSlotById(
+  slotOptionId: string | undefined,
+  options: PresentedSlotOption[] | undefined,
+): PresentedSlotOption | undefined {
+  if (!slotOptionId || !options?.length) {
+    return undefined;
+  }
+
+  return options.find((option) => buildSlotOptionId(option) === slotOptionId);
+}
+
+function normalizeHandoffReason(
+  value: string | undefined,
+): "urgent" | "outside_service_area" | "fallback" {
+  if (value === "urgent" || value === "outside_service_area") {
+    return value;
+  }
+  return "fallback";
 }
