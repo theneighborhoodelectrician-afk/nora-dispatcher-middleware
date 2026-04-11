@@ -124,6 +124,18 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
+    const emailReply = await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-slots",
+        text: "jane@example.com",
+      },
+      storage,
+      config,
+    );
+
+    expect(emailReply.stage).toBe("collect_preferred_window");
+    expect(emailReply.replyText.toLowerCase()).toContain("mornings or afternoons");
+
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
@@ -161,6 +173,7 @@ describe("BookSmart chat flow", () => {
         zipCode: "48313",
         firstName: "Jane",
         phone: "555-111-2222",
+        email: "jane@example.com",
       },
       bookingStatus: "collecting",
       transcript: [],
@@ -310,6 +323,7 @@ describe("BookSmart chat flow", () => {
         zipCode: "48313",
         firstName: "Jane",
         phone: "555-111-2222",
+        email: "jane@example.com",
         preferredWindow: "morning",
       },
       bookingStatus: "offered",
@@ -509,6 +523,14 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-book",
+        text: "jane@example.com",
+      },
+      storage,
+      config,
+    );
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
@@ -579,6 +601,15 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-6",
+        text: "jane@example.com",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-analytics-book",
+        messageId: "msg-7",
         text: "morning",
       },
       storage,
@@ -613,6 +644,57 @@ describe("BookSmart chat flow", () => {
     expect(slots).toHaveLength(0);
     expect(leadSource?.code).toBe("website");
     expect(bookingEvents).toHaveLength(1);
+  });
+
+  it("asks for email before submitting the lead when email is missing", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "hello",
+        contact: {
+          phone: "555-111-2222",
+        },
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "Sterling Heights",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "I need a breaker checked",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "123 Main St, Sterling Heights, MI 48313",
+      },
+      storage,
+      config,
+    );
+    const emailPrompt = await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "Jane",
+      },
+      storage,
+      config,
+    );
+
+    expect(emailPrompt.stage).toBe("collect_email");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("best email");
   });
 
   it("records urgency hits and handoff outcomes for urgent flows", async () => {

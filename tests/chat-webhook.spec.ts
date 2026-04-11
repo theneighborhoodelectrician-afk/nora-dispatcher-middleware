@@ -80,6 +80,10 @@ describe("chat webhook", () => {
       },
       {
         messageId: "blooio-msg-6",
+        text: "jane@example.com",
+      },
+      {
+        messageId: "blooio-msg-7",
         text: "Afternoon works best",
       },
     ];

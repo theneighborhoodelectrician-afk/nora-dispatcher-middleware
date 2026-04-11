@@ -248,6 +248,7 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
       return "address_collected";
     case "collect_name":
     case "collect_phone":
+    case "collect_email":
       return "contact_collected";
     case "collect_preferred_window":
       return state.analytics.photoRequested ? "photo_requested" : "contact_collected";

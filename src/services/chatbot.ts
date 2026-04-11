@@ -40,6 +40,7 @@ type ChatStage =
   | "collect_zip"
   | "collect_name"
   | "collect_phone"
+  | "collect_email"
   | "collect_preferred_window"
   | "lead_submitted"
   | "offer_slots"
@@ -526,11 +527,11 @@ export async function handleChatMessage(
       await recordStageOnce(storage, state, "contact_collected", now, {
         firstName: state.customer.firstName,
       });
-      state.stage = "collect_preferred_window";
+      state.stage = "collect_email";
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: askForPreferredWindow(state),
+        replyText: askForEmail(state),
         stage: state.stage,
       }, now);
     } else {
@@ -559,13 +560,41 @@ export async function handleChatMessage(
     await recordStageOnce(storage, state, "contact_collected", now, {
       phone,
     });
-    state.stage = "collect_preferred_window";
+    state.stage = "collect_email";
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: askForPreferredWindow(state),
+      replyText: askForEmail(state),
       stage: state.stage,
     }, now);
+  }
+
+  if (!state.customer.email) {
+    state.stage = "collect_email";
+    const email = extractEmailAddress(messageText);
+    if (!email) {
+      if (wantsToSkipEmail(messageText)) {
+        state.stage = "collect_preferred_window";
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForPreferredWindow(state),
+          stage: state.stage,
+        }, now);
+      }
+
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForEmail(state),
+        stage: state.stage,
+      }, now);
+    }
+
+    state.customer.email = email;
+    await recordStageOnce(storage, state, "contact_collected", now, {
+      email,
+    });
   }
 
   if (!state.customer.preferredWindow) {
@@ -1272,6 +1301,10 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "collect_phone";
   }
 
+  if (!state.customer.email) {
+    return "collect_email";
+  }
+
   if (!state.customer.preferredWindow) {
     return "collect_preferred_window";
   }
@@ -1299,6 +1332,9 @@ function listMissingFields(state: ChatSessionState): string[] {
   if (!state.customer.phone) {
     missing.push("phone");
   }
+  if (!state.customer.email) {
+    missing.push("email");
+  }
   if (!state.customer.preferredWindow) {
     missing.push("preferred_window");
   }
@@ -1313,6 +1349,7 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
     state.customer.zipCode &&
     state.customer.firstName &&
     state.customer.phone &&
+    state.customer.email &&
     state.customer.preferredWindow &&
     state.bookingStatus !== "lead_submitted" &&
     state.bookingStatus !== "handoff",
@@ -1469,6 +1506,19 @@ function askForPhone(state: ChatSessionState): string {
   return personalizeReply(state, "what’s the best number for you?");
 }
 
+function askForEmail(state: ChatSessionState): string {
+  return personalizeReply(state, "what’s the best email for you? you can say skip if you want.");
+}
+
 function askForPreferredWindow(state: ChatSessionState): string {
   return personalizeReply(state, "do mornings or afternoons usually work better?");
+}
+
+function extractEmailAddress(text: string): string | undefined {
+  const match = text.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+  return match?.[0]?.toLowerCase();
+}
+
+function wantsToSkipEmail(text: string): boolean {
+  return /\b(skip|no email|dont have email|don't have email|no thanks|rather not)\b/i.test(text);
 }
