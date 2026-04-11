@@ -73,9 +73,10 @@ async function sendMessage(text) {
     replacePendingEntry({
       role: "assistant",
       text: payload.replyText,
-      kind: payload.bookingId ? "booked" : payload.handoffRequired ? "handoff" : "reply",
+      kind: payload.bookingId ? "booked" : payload.leadId ? "submitted" : payload.handoffRequired ? "handoff" : "reply",
       options: Array.isArray(payload.options) ? payload.options : [],
       bookingId: payload.bookingId,
+      leadId: payload.leadId,
       handoffRequired: payload.handoffRequired,
     });
 
@@ -83,6 +84,8 @@ async function sendMessage(text) {
       false,
       payload.bookingId
         ? `Booked successfully: ${payload.bookingId}`
+        : payload.leadId
+          ? `Request submitted: ${payload.leadId}`
         : payload.handoffRequired
           ? "BookSmart flagged this for team review."
           : "Reply received.",
@@ -149,6 +152,13 @@ function renderHistory(history) {
       const tag = document.createElement("div");
       tag.className = "chat-note success";
       tag.textContent = `Booking ID: ${entry.bookingId}`;
+      item.appendChild(tag);
+    }
+
+    if (entry.role === "assistant" && entry.leadId) {
+      const tag = document.createElement("div");
+      tag.className = "chat-note success";
+      tag.textContent = `Request ID: ${entry.leadId}`;
       item.appendChild(tag);
     }
 

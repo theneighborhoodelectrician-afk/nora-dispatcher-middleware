@@ -1,6 +1,12 @@
 import { AppConfig } from "../../config.js";
 import { HousecallProClient } from "../../integrations/housecallPro.js";
-import { HcpAdapter, HcpAvailabilityInput, HcpCreateBookingInput, HcpFindOrCreateCustomerInput } from "./types.js";
+import {
+  HcpAdapter,
+  HcpAvailabilityInput,
+  HcpCreateBookingInput,
+  HcpCreateLeadInput,
+  HcpFindOrCreateCustomerInput,
+} from "./types.js";
 
 export class BookSmartHcpAdapter implements HcpAdapter {
   readonly rawClient: HousecallProClient;
@@ -30,5 +36,9 @@ export class BookSmartHcpAdapter implements HcpAdapter {
 
   async createBooking(input: HcpCreateBookingInput): Promise<{ id: string }> {
     return this.rawClient.createBooking(input);
+  }
+
+  async createLead(input: HcpCreateLeadInput): Promise<{ id: string }> {
+    return this.rawClient.createLead(input);
   }
 }

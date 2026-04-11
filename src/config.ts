@@ -49,6 +49,7 @@ export interface AppConfig {
     schedulePath: string;
     createJobPath: string;
     createEstimatePath: string;
+    createLeadPath: string;
   };
   ghl: {
     webhookSecret?: string;
@@ -88,10 +89,11 @@ export function getConfig(): AppConfig {
       token: process.env.HCP_API_TOKEN,
       companyId: process.env.HCP_COMPANY_ID,
       customerPath: process.env.HCP_CUSTOMER_PATH ?? "/customers",
-      employeePath: process.env.HCP_EMPLOYEE_PATH ?? "/public/v1/employees",
+      employeePath: process.env.HCP_EMPLOYEE_PATH ?? "/employees",
       schedulePath: process.env.HCP_SCHEDULE_PATH ?? "/jobs",
       createJobPath: process.env.HCP_CREATE_JOB_PATH ?? "/jobs",
       createEstimatePath: process.env.HCP_CREATE_ESTIMATE_PATH ?? "/public/v1/estimates",
+      createLeadPath: process.env.HCP_CREATE_LEAD_PATH ?? "/leads",
     },
     ghl: {
       webhookSecret: process.env.GHL_WEBHOOK_SECRET,

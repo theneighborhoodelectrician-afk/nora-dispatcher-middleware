@@ -183,6 +183,62 @@ export class HousecallProClient {
     return { id: body.id ?? `hcp-${payload.target}-${Date.now()}` };
   }
 
+  async createLead(payload: {
+    customer: {
+      firstName: string;
+      lastName?: string;
+      phone: string;
+      email?: string;
+      address?: string;
+      city?: string;
+      zipCode: string;
+    };
+    serviceName: string;
+    requestedWindow?: "morning" | "afternoon";
+    leadSource?: string;
+    notes?: string;
+  }): Promise<{ id: string }> {
+    if (!this.config.token) {
+      return { id: `mock-lead-${Date.now()}` };
+    }
+
+    const customerId = await this.findOrCreateCustomer(payload.customer);
+    const requestPayload = {
+      customer_id: customerId,
+      address: {
+        street: payload.customer.address,
+        city: payload.customer.city,
+        zip: payload.customer.zipCode,
+      },
+      lead_source: payload.leadSource,
+      note: buildLeadNote(payload),
+      tags: ["booksmart"],
+    };
+
+    const response = await fetch(buildUrl(this.config.baseUrl, this.config.createLeadPath), {
+      ...this.requestInit("POST", requestPayload),
+    }).catch((error) => {
+      throw new ExternalServiceError(`Housecall Pro create lead failed: ${String(error)}`);
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeReadResponseText(response);
+      throw new ExternalServiceError(
+        `Housecall Pro create lead failed with ${response.status}`,
+        "We couldn't submit this request to dispatch just yet.",
+        {
+          status: response.status,
+          url: buildUrl(this.config.baseUrl, this.config.createLeadPath),
+          body: errorBody,
+          requestPayload,
+        },
+      );
+    }
+
+    const body = await readJson<{ id?: string }>(response);
+    return { id: body.id ?? `hcp-lead-${Date.now()}` };
+  }
+
   async findOrCreateCustomer(customer: {
     firstName: string;
     lastName?: string;
@@ -373,6 +429,20 @@ export class HousecallProClient {
       matchesCustomer(candidate, customer),
     );
   }
+}
+
+function buildLeadNote(payload: {
+  serviceName: string;
+  requestedWindow?: "morning" | "afternoon";
+  notes?: string;
+}): string {
+  return [
+    `Service request: ${payload.serviceName}`,
+    payload.requestedWindow ? `Preferred window: ${payload.requestedWindow}` : undefined,
+    payload.notes,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function sleep(ms: number): Promise<void> {

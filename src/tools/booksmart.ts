@@ -5,6 +5,7 @@ import { CustomerRequest } from "../domain/types.js";
 import { BookSmartHcpAdapter } from "../adapters/hcp/client.js";
 import { getAvailability } from "../services/availability.js";
 import { createBooking } from "../services/booking.js";
+import { LeadResponsePayload } from "../domain/types.js";
 
 export function checkServiceArea(
   city: string | undefined,
@@ -178,6 +179,42 @@ export async function createBookingTool(
 ): Promise<Awaited<ReturnType<typeof createBooking>>> {
   const adapter = new BookSmartHcpAdapter(runtimeConfig.hcp);
   return createBooking(customerRequest, selectedSlot, adapter.rawClient, runtimeConfig);
+}
+
+export async function createLeadTool(
+  customerRequest: CustomerRequest,
+  runtimeConfig: AppConfig,
+  leadSource = "website",
+): Promise<LeadResponsePayload> {
+  const adapter = new BookSmartHcpAdapter(runtimeConfig.hcp);
+  const result = await adapter.createLead({
+    customer: {
+      firstName: customerRequest.firstName,
+      lastName: customerRequest.lastName,
+      phone: customerRequest.phone,
+      email: customerRequest.email,
+      address: customerRequest.address,
+      city: customerRequest.city,
+      zipCode: customerRequest.zipCode,
+    },
+    serviceName: customerRequest.requestedService,
+    requestedWindow: customerRequest.preferredWindow,
+    leadSource,
+    notes: customerRequest.notes,
+  });
+
+  return {
+    success: true,
+    status: "lead_submitted",
+    externalId: result.id,
+    message: "Lead submitted.",
+    presentation: {
+      replyText:
+        "Thanks, I’ve sent your request to our dispatch team. They’ll confirm the best appointment time with you shortly.",
+      followUpPrompt:
+        "Confirm that the request is in and the team will follow up with the appointment time.",
+    },
+  };
 }
 
 function normalizeCity(city: string | undefined): string | undefined {

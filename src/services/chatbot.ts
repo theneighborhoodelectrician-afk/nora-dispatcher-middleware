@@ -25,6 +25,7 @@ import {
   checkServiceArea,
   classifyServiceType,
   createBookingTool,
+  createLeadTool,
   detectUrgency,
   findOrCreateCustomerTool,
   getServiceTypeById,
@@ -42,6 +43,7 @@ type ChatStage =
   | "collect_name"
   | "collect_phone"
   | "collect_preferred_window"
+  | "lead_submitted"
   | "offer_slots"
   | "booked"
   | "human_handoff";
@@ -72,7 +74,7 @@ export interface ChatSessionState {
   sessionId: string;
   stage: ChatStage;
   customer: Partial<CustomerRequest>;
-  bookingStatus?: "collecting" | "ready_for_availability" | "offered" | "booked" | "handoff";
+  bookingStatus?: "collecting" | "ready_for_availability" | "offered" | "booked" | "handoff" | "lead_submitted";
   serviceTypeId?: BookSmartServiceTypeId;
   urgency?: "normal" | "urgent";
   lastOfferedOptions?: PresentedSlotOption[];
@@ -87,6 +89,7 @@ export interface ChatReplyPayload {
   stage: ChatStage;
   options?: PresentedSlotOption[];
   bookingId?: string;
+  leadId?: string;
   handoffRequired?: boolean;
 }
 
@@ -569,69 +572,47 @@ export async function handleChatMessage(
     }
     state.customer.preferredWindow = preferredWindow;
   }
-
   await recordMessage(storage, {
     conversationId: state.sessionId,
     direction: "tool",
     timestamp: now,
-    toolName: "get_availability",
-    toolCallSummary: `Checking live availability for ${state.customer.requestedService}.`,
+    toolName: "create_lead",
+    toolCallSummary: `Submitting HCP lead for ${state.customer.requestedService}.`,
   });
-  const availability = await getAvailabilityTool(toCustomerRequest(state.customer), config, bookSmartConfig);
-  await recordMessage(storage, {
+  const lead = await createLeadTool(
+    toCustomerRequest(state.customer),
+    config,
+    state.analytics.leadSource,
+  );
+  state.stage = "lead_submitted";
+  state.bookingStatus = "lead_submitted";
+  state.analytics.lastBookingId = lead.externalId;
+  await storage.appendBookingEvent({
     conversationId: state.sessionId,
-    direction: "tool",
+    bookingExternalId: lead.externalId,
+    bookingStatus: lead.status,
     timestamp: now,
-    toolName: "get_availability_result",
-    toolCallSummary:
-      availability.status === "slots_available"
-        ? `Availability returned ${availability.presentation.options?.length ?? 0} slot options.`
-        : `Availability escalated with ${availability.escalationReason ?? availability.status}.`,
     metadata: {
-      status: availability.status,
-      escalationReason: availability.escalationReason,
-      diagnostics: availability.diagnostics,
+      requestedWindow: state.customer.preferredWindow,
+      requestedService: state.customer.requestedService,
+      source: "lead_first_launch_flow",
     },
   });
-  state.lastOfferedOptions = availability.presentation.options;
-
-  if (availability.status === "slots_available" && availability.presentation.options?.length) {
-    state.stage = "offer_slots";
-    state.bookingStatus = "offered";
-    await recordSlotExposureSet(storage, state, availability.presentation.options, now);
-    await recordStageOnce(storage, state, "availability_presented", now, {
-      slotCount: availability.presentation.options.length,
-    });
-    return persistReply(storage, state, {
+  await recordStageOnce(storage, state, "lead_submitted", now, {
+    leadId: lead.externalId,
+  });
+  return persistReply(
+    storage,
+    state,
+    {
       success: true,
       sessionId,
-      replyText: availability.presentation.replyText,
+      replyText: lead.presentation.replyText,
       stage: state.stage,
-      options: availability.presentation.options,
-    }, now);
-  }
-
-  state.stage = "human_handoff";
-  state.bookingStatus = "handoff";
-  state.analytics.lastHandoffReason = availability.escalationReason ?? availability.status;
-  await storage.appendHandoffEvent({
-    conversationId: state.sessionId,
-    reason: availability.escalationReason ?? availability.status,
-    timestamp: now,
-    metadata: {
-      diagnostics: availability.diagnostics,
+      leadId: lead.externalId,
     },
-  });
-  await recordStageOnce(storage, state, "escalated", now, {
-    reason: availability.escalationReason ?? availability.status,
-  });
-  return persistReply(storage, state, {
-    success: true,
-    sessionId,
-    replyText: availability.presentation.replyText,
-    stage: state.stage,
-    handoffRequired: true,
-  }, now);
+    now,
+  );
 }
 
 function mergeState(
@@ -732,6 +713,7 @@ async function persistReply(
       stage: payload.stage,
       handoffRequired: payload.handoffRequired,
       bookingId: payload.bookingId,
+      leadId: payload.leadId,
     },
   });
   await syncConversationSnapshot(storage, state, state.analytics.leadSource, timestamp);
@@ -884,6 +866,7 @@ async function tryHandleChatMessageWithOpenAi(
       stage: state.stage,
       options: state.stage === "offer_slots" ? state.lastOfferedOptions : undefined,
       bookingId: state.stage === "booked" ? state.analytics.lastBookingId : undefined,
+      leadId: state.stage === "lead_submitted" ? state.analytics.lastBookingId : undefined,
       handoffRequired: state.stage === "human_handoff" ? true : undefined,
     }, timestamp);
   } catch (error) {
@@ -1448,6 +1431,10 @@ function buildOpenAiInput(
 function deriveStageFromState(state: ChatSessionState): ChatStage {
   if (state.bookingStatus === "booked") {
     return "booked";
+  }
+
+  if (state.bookingStatus === "lead_submitted") {
+    return "lead_submitted";
   }
 
   if (state.bookingStatus === "handoff") {

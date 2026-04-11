@@ -24,6 +24,16 @@ export interface HcpCreateBookingInput {
   target: "job" | "estimate";
 }
 
+export interface HcpCreateLeadInput {
+  customer: HcpFindOrCreateCustomerInput & {
+    city?: string;
+  };
+  serviceName: string;
+  requestedWindow?: "morning" | "afternoon";
+  leadSource?: string;
+  notes?: string;
+}
+
 export interface HcpAdapter {
   readonly rawClient: HousecallProClient;
   getAvailability(input: HcpAvailabilityInput): Promise<{
@@ -31,4 +41,5 @@ export interface HcpAdapter {
   }>;
   findOrCreateCustomer(input: HcpFindOrCreateCustomerInput): Promise<{ customerId: string }>;
   createBooking(input: HcpCreateBookingInput): Promise<{ id: string }>;
+  createLead(input: HcpCreateLeadInput): Promise<{ id: string }>;
 }

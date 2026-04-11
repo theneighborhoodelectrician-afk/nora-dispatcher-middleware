@@ -24,10 +24,11 @@ const config: AppConfig = {
   hcp: {
     baseUrl: "https://api.housecallpro.com",
     customerPath: "/customers",
-    employeePath: "/public/v1/employees",
-    schedulePath: "/public/v1/jobs",
-    createJobPath: "/public/v1/jobs",
+    employeePath: "/employees",
+    schedulePath: "/jobs",
+    createJobPath: "/jobs",
     createEstimatePath: "/public/v1/estimates",
+    createLeadPath: "/leads",
   },
   ghl: {},
   blooio: {},
@@ -68,7 +69,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText).toContain("What city is the project in?");
   });
 
-  it("offers real slots after city, service, address, name, and time preference are collected", async () => {
+  it("submits a lead after city, service, address, name, and time preference are collected", async () => {
     const storage = new MemoryStorageAdapter();
 
     await handleChatMessage(
@@ -128,9 +129,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("offer_slots");
-    expect(reply.options).toHaveLength(3);
-    expect(reply.replyText.toLowerCase()).toContain("morning");
+    expect(reply.stage).toBe("lead_submitted");
+    expect(reply.leadId).toContain("lead-");
+    expect(reply.replyText.toLowerCase()).toContain("dispatch team");
   });
 
   it("can use the OpenAI runtime path to offer real slots through typed tools", async () => {
@@ -511,7 +512,7 @@ describe("BookSmart chat flow", () => {
     expect(secondReply.handoffRequired).toBeUndefined();
   });
 
-  it("books a selected option after BookSmart offers slots", async () => {
+  it("submits a lead instead of claiming a booked slot", async () => {
     const storage = new MemoryStorageAdapter();
 
     await handleChatMessage(
@@ -557,7 +558,7 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
-    await handleChatMessage(
+    const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
         text: "afternoon",
@@ -566,17 +567,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    const reply = await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-book",
-        text: "the first one works",
-      },
-      storage,
-      config,
-    );
-
-    expect(reply.stage).toBe("booked");
-    expect(reply.bookingId).toContain("mock-");
+    expect(reply.stage).toBe("lead_submitted");
+    expect(reply.leadId).toContain("lead-");
+    expect(reply.replyText.toLowerCase()).toContain("dispatch");
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {
@@ -640,16 +633,6 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-analytics-book",
-        messageId: "msg-7",
-        text: "first one",
-      },
-      storage,
-      config,
-    );
-
     const conversation = await storage.getConversation("booksmart-analytics-book");
     const outcome = await storage.getConversationOutcome("booksmart-analytics-book");
     const stages = await storage.listConversationStages("booksmart-analytics-book");
@@ -660,9 +643,9 @@ describe("BookSmart chat flow", () => {
 
     expect(conversation?.leadSource).toBe("website");
     expect(outcome?.bookedYesNo).toBe(true);
-    expect(outcome?.availabilityShown).toBe(true);
-    expect(outcome?.slotSelected).toBe(true);
-    expect(outcome?.slotsShownCount).toBe(3);
+    expect(outcome?.availabilityShown).toBe(false);
+    expect(outcome?.slotSelected).toBe(false);
+    expect(outcome?.slotsShownCount).toBe(0);
     expect(stages.map((stage) => stage.stage)).toEqual(
       expect.arrayContaining([
         "started",
@@ -670,16 +653,13 @@ describe("BookSmart chat flow", () => {
         "service_identified",
         "address_collected",
         "contact_collected",
-        "availability_presented",
-        "slot_selected",
-        "booked",
+        "lead_submitted",
       ]),
     );
     expect(messages.some((message) => message.direction === "inbound")).toBe(true);
     expect(messages.some((message) => message.direction === "outbound")).toBe(true);
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "get_availability")).toBe(true);
-    expect(slots).toHaveLength(3);
-    expect(slots.some((slot) => slot.selectedYesNo)).toBe(true);
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
+    expect(slots).toHaveLength(0);
     expect(leadSource?.code).toBe("website");
     expect(bookingEvents).toHaveLength(1);
   });

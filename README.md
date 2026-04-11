@@ -1,12 +1,12 @@
 # BookSmart Dispatcher Middleware
 
-Webhook middleware for BookSmart, the AI booking assistant for The Neighborhood Electrician. This service preserves the existing Housecall Pro booking engine, adds a BookSmart chat flow around it, checks real availability, returns appointment options, and books the confirmed slot as a Housecall Pro job or estimate.
+Webhook middleware for BookSmart, the AI booking assistant for The Neighborhood Electrician. This service preserves the existing Housecall Pro engine, adds a BookSmart chat flow around it, captures dispatch-ready requests, creates Housecall Pro leads, and keeps direct booking work available for later hardening.
 
 ## BookSmart direction
 
 This repo is now being evolved incrementally toward BookSmart v1.
 
-- Housecall Pro remains the source of truth for availability and booking writes
+- Housecall Pro remains the source of truth for lead and booking writes
 - BookSmart asks one question at a time and starts with city qualification
 - Structured config now lives in dedicated BookSmart config/types modules instead of prompt-only logic
 - Typed tool wrappers sit between chat orchestration and the existing HCP-backed services
@@ -25,6 +25,7 @@ What is new in this phase:
 - `src/tools/booksmart.ts` for typed booking/chat tools
 - `src/channels/blooio/normalize.ts` for inbound channel normalization
 - A city-first BookSmart chat orchestration flow in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/services/chatbot.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/services/chatbot.ts)
+- Launch-ready lead submission flow that sends dispatch-ready requests to Housecall Pro
 - Optional OpenAI Responses orchestration in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/services/openaiResponses.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/services/openaiResponses.ts) with a compact system prompt in [`/Users/nateanderson/Documents/The Neighborhood Dispatcher/src/prompts/booksmartSystemPrompt.ts`](/Users/nateanderson/Documents/The%20Neighborhood%20Dispatcher/src/prompts/booksmartSystemPrompt.ts)
 
 Still planned:
@@ -70,7 +71,7 @@ The project now includes a lightweight public web surface:
 - `/`
   Landing page for BookSmart
 - `/book/`
-  Browser-based chat entry wired into the existing BookSmart conversation flow
+  Browser-based request intake wired into the existing BookSmart conversation flow
 - `POST /api/public/chat`
   Public web-chat endpoint that reuses the same `handleChatMessage` orchestration without the inbound webhook signature requirement
 
@@ -78,6 +79,7 @@ Current assumptions:
 
 - the public chat keeps session state in the browser tab for now
 - lead source defaults to `website` unless provided by query string or payload
+- launch behavior is lead-first, so BookSmart collects details and preferred window, then dispatch follows up to confirm the appointment
 - this route is intended for first-party browser usage, while Blooio and other channels should keep using the authenticated webhook path
 
 ## OpenAI runtime
@@ -85,9 +87,9 @@ Current assumptions:
 BookSmart now has an optional OpenAI Responses runtime path layered on top of the existing typed tools.
 
 - It is off unless `OPENAI_RESPONSES_ENABLED=true` or an `OPENAI_API_KEY` is present
-- It uses the existing typed BookSmart tools for service area checks, service classification, live availability, booking, photo requests, and human handoff
+- It uses the existing typed BookSmart tools for service area checks, service classification, lead creation, photo requests, and human handoff
 - If the OpenAI request fails, chat falls back to the existing deterministic flow
-- Housecall Pro remains the source of truth for availability and booking writes
+- Housecall Pro remains the source of truth for lead and booking writes
 
 Assumptions in the current implementation:
 
@@ -137,14 +139,13 @@ Assumptions in the current implementation:
 - Final-lock recheck before booking to reduce double-booking risk
 - Housecall Pro adapter with retry and pagination scaffolding
 - In-memory idempotency protection for duplicate webhook deliveries
-- GHL-ready presentation payloads with reply text and exactly three option labels
+- Blooio customer intake link: [Start Chat](https://start.msg.new/J0WEQDwVTt)
 - Chat-ready conversation state for text-first booking flows
 
 ## Current business rules
 
-- Default offered slots: top 3
 - Response statuses:
-  - `slots_available`
+  - `lead_submitted`
   - `human_escalation_required`
   - `booked`
   - `slot_unavailable`
@@ -216,10 +217,11 @@ HCP_API_BASE_URL=https://api.housecallpro.com
 HCP_API_TOKEN=
 HCP_COMPANY_ID=
 HCP_CUSTOMER_PATH=/customers
-HCP_EMPLOYEE_PATH=/public/v1/employees
+HCP_EMPLOYEE_PATH=/employees
 HCP_SCHEDULE_PATH=/jobs
 HCP_CREATE_JOB_PATH=/jobs
 HCP_CREATE_ESTIMATE_PATH=/public/v1/estimates
+HCP_CREATE_LEAD_PATH=/leads
 GHL_WEBHOOK_SECRET=
 ADMIN_SECRET=
 POSTGRES_URL=
@@ -274,9 +276,11 @@ npm run deploy:check
 1. Configure these env vars in the host:
    - `HCP_API_TOKEN`
    - `HCP_CUSTOMER_PATH=/customers`
+   - `HCP_EMPLOYEE_PATH=/employees`
    - `HCP_SCHEDULE_PATH=/jobs`
    - `HCP_CREATE_JOB_PATH=/jobs`
    - `HCP_CREATE_ESTIMATE_PATH=/public/v1/estimates`
+   - `HCP_CREATE_LEAD_PATH=/leads`
    - `GHL_WEBHOOK_SECRET`
    - `ADMIN_SECRET`
    - `POSTGRES_URL`
@@ -302,8 +306,8 @@ npm run deploy:check
 
 The chat route is designed for a text channel such as Blooio. It accepts a lightweight message payload,
 stores the conversation state, asks for missing details one step at a time, starts by qualifying the city,
-then gathers service type, address, contact details, and morning or afternoon preference before checking
-availability through the same HCP-backed services used elsewhere in the middleware.
+then gathers service type, address, contact details, and morning or afternoon preference before creating
+a dispatch-ready lead in Housecall Pro for follow-up.
 
 Example payload:
 

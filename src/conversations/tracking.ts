@@ -80,6 +80,8 @@ export function buildConversationOutcomeRecord(
   const finalBookingStatus =
     state.bookingStatus === "booked"
       ? "booked"
+      : state.bookingStatus === "lead_submitted"
+        ? "lead_submitted"
       : state.bookingStatus === "handoff"
         ? "handoff"
         : state.bookingStatus ?? "collecting";
@@ -100,7 +102,7 @@ export function buildConversationOutcomeRecord(
     availabilityShown: slotsShownCount > 0,
     slotsShownCount,
     slotSelected: Boolean(state.analytics.selectedSlotOptionId),
-    bookedYesNo: state.bookingStatus === "booked",
+    bookedYesNo: state.bookingStatus === "booked" || state.bookingStatus === "lead_submitted",
     handoffYesNo: state.bookingStatus === "handoff",
     abandonmentStage:
       state.bookingStatus === "booked" || state.bookingStatus === "handoff"
@@ -209,6 +211,9 @@ function buildSystemSummary(state: ChatSessionState): string | undefined {
   if (state.bookingStatus === "booked") {
     return `Booked ${state.serviceTypeId ?? "service"} after presenting ${state.analytics.slotsShownCount} slots.`;
   }
+  if (state.bookingStatus === "lead_submitted") {
+    return `Lead submitted for ${state.serviceTypeId ?? "service"} with ${state.customer.preferredWindow ?? "unspecified"} preference.`;
+  }
   if (state.bookingStatus === "handoff") {
     return state.analytics.lastHandoffReason
       ? `Handed off: ${state.analytics.lastHandoffReason}.`
@@ -220,6 +225,9 @@ function buildSystemSummary(state: ChatSessionState): string | undefined {
 function currentConversationStage(state: ChatSessionState): ConversationStage {
   if (state.bookingStatus === "booked") {
     return "booked";
+  }
+  if (state.bookingStatus === "lead_submitted") {
+    return "lead_submitted";
   }
   if (state.bookingStatus === "handoff") {
     return "escalated";
@@ -242,6 +250,8 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
       return "contact_collected";
     case "collect_preferred_window":
       return state.analytics.photoRequested ? "photo_requested" : "contact_collected";
+    case "lead_submitted":
+      return "lead_submitted";
     case "offer_slots":
       return "availability_presented";
     case "booked":

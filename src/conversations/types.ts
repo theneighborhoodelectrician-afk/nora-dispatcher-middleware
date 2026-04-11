@@ -14,6 +14,7 @@ export type ConversationStage =
   | "service_identified"
   | "address_collected"
   | "contact_collected"
+  | "lead_submitted"
   | "photo_requested"
   | "photo_received"
   | "availability_presented"

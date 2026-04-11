@@ -142,3 +142,11 @@ export interface BookingResponsePayload {
   escalationReason?: EscalationReason;
   presentation: ConversationPresentation;
 }
+
+export interface LeadResponsePayload {
+  success: boolean;
+  status: "lead_submitted" | "human_escalation_required";
+  message: string;
+  externalId?: string;
+  presentation: ConversationPresentation;
+}
