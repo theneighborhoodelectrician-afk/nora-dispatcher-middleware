@@ -299,6 +299,12 @@ button {
   margin-bottom: 12px;
 }
 
+.list-item-main.active {
+  border-radius: 14px;
+  padding: 8px;
+  background: rgba(154, 52, 18, 0.06);
+}
+
 .list-item-actions {
   display: flex;
   flex-wrap: wrap;

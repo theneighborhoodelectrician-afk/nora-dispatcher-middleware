@@ -75,6 +75,7 @@ let selectedServiceTypeId = null;
 let currentOutcomes = [];
 let currentConversationBundle = null;
 let adminUnlocked = false;
+let selectedConversationId = null;
 
 boot();
 
@@ -238,6 +239,23 @@ async function loadConversations() {
   renderConversationLeadFilter(currentOutcomes);
   renderConversationStats(currentOutcomes);
   renderConversationList();
+
+  const visibleOutcomes = sortConversationOutcomes(filterConversationOutcomes(currentOutcomes));
+  const nextConversationId = visibleOutcomes.find((outcome) => outcome.conversationId === selectedConversationId)?.conversationId
+    ?? visibleOutcomes[0]?.conversationId;
+
+  if (nextConversationId) {
+    try {
+      await loadConversationDetail(nextConversationId);
+    } catch (error) {
+      showConversationError(error);
+    }
+  } else {
+    selectedConversationId = null;
+    currentConversationBundle = null;
+    detailId.textContent = "Select a conversation";
+    conversationDetail.innerHTML = "Choose a conversation outcome to load stages, transcript messages, slot exposure, urgency hits, booking events, and handoffs.";
+  }
 }
 
 function renderConversationList() {
@@ -257,7 +275,7 @@ function renderConversationList() {
     const reviewed = isConversationReviewed(outcome.conversationId);
 
     const button = document.createElement("button");
-    button.className = "list-item-main";
+    button.className = `list-item-main ${outcome.conversationId === selectedConversationId ? "active" : ""}`;
     button.type = "button";
     button.innerHTML = `
       <strong>${escapeHtml(outcome.conversationId)}</strong>
@@ -315,6 +333,8 @@ function renderConversationList() {
 }
 
 async function loadConversationDetail(conversationId) {
+  selectedConversationId = conversationId;
+  renderConversationList();
   detailId.textContent = conversationId;
   conversationDetail.innerHTML = '<div class="detail-empty">Loading conversation detail…</div>';
   const response = await adminFetch(`/api/admin/conversations?conversationId=${encodeURIComponent(conversationId)}`);
@@ -330,6 +350,7 @@ async function loadConversationDetail(conversationId) {
   const outcome = payload.outcome ?? {};
   const lastStage = stages.at(-1)?.stage ?? "unknown";
   const aiDecisions = extractAiDecisionEntries(messages);
+  const handoffReason = deriveHandoffReason(outcome, handoffEvents);
   updateReviewedButtonState();
 
   conversationDetail.innerHTML = `
@@ -345,6 +366,7 @@ async function loadConversationDetail(conversationId) {
           <span>Last stage: ${escapeHtml(lastStage)}</span>
           <span>Urgency: ${escapeHtml(outcome.urgencyLevel ?? "normal")}</span>
           <span>Abandonment stage: ${escapeHtml(outcome.abandonmentStage ?? "n/a")}</span>
+          <span>Handoff reason: ${escapeHtml(handoffReason ?? "n/a")}</span>
         </div>
         <div class="detail-actions">
           <span class="status-text">Use the quick actions above to copy this review or jump to the related config section.</span>
@@ -365,6 +387,7 @@ async function loadConversationDetail(conversationId) {
       ${renderBlock("Urgency Hits", urgencyHits.length ? urgencyHits.map((hit) => `${hit.keywordDetected} · ${hit.mappedUrgencyLevel}`) : ["None"])}
       ${renderBlock("Booking Events", bookingEvents.length ? bookingEvents.map((event) => `${event.bookingStatus} · ${event.bookingExternalId ?? "no external id"}`) : ["None"])}
       ${renderBlock("Handoff Events", handoffEvents.length ? handoffEvents.map((event) => `${event.reason} · ${formatTime(event.timestamp)}`) : ["None"])}
+      ${renderBlock("Routing Insight", buildRoutingInsightItems(outcome, handoffEvents, slots))}
       ${renderBlock("Summary", [outcome.systemSummary ?? "No internal summary yet."])}
     </div>
   `;
@@ -919,7 +942,7 @@ function deriveQueueReason(outcome) {
     return "urgent";
   }
   if (status === "human_escalation_required") {
-    return "hcp escalation";
+    return outcome.slotsShownCount > 0 ? "booking escalation" : "no live slots";
   }
   if (outcome.handoffYesNo) {
     return "handoff";
@@ -928,6 +951,43 @@ function deriveQueueReason(outcome) {
     return "slots shown";
   }
   return "";
+}
+
+function deriveHandoffReason(outcome, handoffEvents = []) {
+  if (handoffEvents.length) {
+    return handoffEvents.at(-1)?.reason;
+  }
+
+  if (outcome.finalBookingStatus === "human_escalation_required") {
+    return outcome.slotsShownCount > 0 ? "booking escalation required" : "no viable availability";
+  }
+
+  return deriveQueueReason(outcome);
+}
+
+function buildRoutingInsightItems(outcome, handoffEvents, slots) {
+  const items = [];
+  const handoffReason = deriveHandoffReason(outcome, handoffEvents);
+
+  if (outcome.handoffYesNo) {
+    items.push(`Final handoff reason: ${handoffReason ?? "unknown"}`);
+  }
+  if (!outcome.handoffYesNo && !outcome.bookedYesNo) {
+    items.push(`Conversation is still collecting at ${outcome.abandonmentStage ?? "an unknown stage"}.`);
+  }
+  if ((outcome.slotsShownCount ?? 0) === 0) {
+    items.push("No slot options were presented to the customer.");
+  } else {
+    items.push(`${outcome.slotsShownCount} slot option(s) were presented.`);
+  }
+  if (outcome.finalBookingStatus === "human_escalation_required" && slots.length === 0) {
+    items.push("Live availability did not resolve to bookable openings for this run.");
+  }
+  if (outcome.urgencyLevel === "urgent") {
+    items.push("Urgency rules contributed to the routing decision.");
+  }
+
+  return items.length ? items : ["No routing insight available yet."];
 }
 
 function buildHandoffSummaryText(outcome) {
@@ -1018,7 +1078,8 @@ function updateReviewedButtonState() {
 }
 
 function showConversationError(error) {
-  conversationList.innerHTML = `<div class="detail-empty">${escapeHtml(error.message)}</div>`;
+  const message = error instanceof Error ? error.message : "Conversation detail could not be loaded.";
+  conversationDetail.innerHTML = `<div class="detail-empty">${escapeHtml(message)}</div>`;
 }
 
 function showConfigError(error) {
