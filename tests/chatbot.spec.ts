@@ -56,13 +56,13 @@ describe("BookSmart chat flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("asks for city first before collecting booking details", async () => {
+  it("opens with a more natural first text when the customer starts with a greeting", async () => {
     const storage = new MemoryStorageAdapter();
 
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-city",
-        text: "I need recessed lights in my kitchen",
+        text: "hello",
         contact: {
           phone: "555-111-2222",
         },
@@ -71,8 +71,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_city");
-    expect(reply.replyText).toContain("What city is the project in?");
+    expect(reply.stage).toBe("collect_service_type");
+    expect(reply.replyText).toContain("What’s going on?");
   });
 
   it("submits a lead after city, service, address, name, and time preference are collected", async () => {
@@ -93,7 +93,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
-        text: "Sterling Heights",
+        text: "I need recessed lights in my kitchen",
       },
       storage,
       config,
@@ -102,7 +102,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
-        text: "I need recessed lights in my kitchen",
+        text: "Sterling Heights",
       },
       storage,
       config,
@@ -149,9 +149,8 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("dispatch");
-    expect(reply.replyText.toLowerCase()).toContain("team member");
-    expect(reply.replyText.toLowerCase()).toContain("asap");
+    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText).toContain("586-489-1504");
   });
 
   it("submits a lead through the OpenAI runtime path instead of offering slots", async () => {
@@ -177,6 +176,7 @@ describe("BookSmart chat flow", () => {
         firstName: "Jane",
         phone: "555-111-2222",
         email: "jane@example.com",
+        preferredWindow: "morning",
       },
       bookingStatus: "collecting",
       transcript: [],
@@ -204,7 +204,7 @@ describe("BookSmart chat flow", () => {
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-ai-slots",
-        text: "Morning works best",
+        text: "Sounds good",
       },
       storage,
       aiConfig,
@@ -212,8 +212,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("dispatch");
-    expect(reply.replyText.toLowerCase()).toContain("team member");
+    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -365,8 +364,8 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("dispatch");
-    expect(reply.replyText.toLowerCase()).toContain("team member");
+    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText).toContain("586-489-1504");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -388,15 +387,6 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-chat-urgent",
         text: "hello",
-      },
-      storage,
-      config,
-    );
-
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-urgent",
-        text: "Troy",
       },
       storage,
       config,
@@ -429,6 +419,15 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-area",
+        text: "I need an electrician",
+      },
+      storage,
+      config,
+    );
+
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-area",
@@ -454,7 +453,7 @@ describe("BookSmart chat flow", () => {
       },
       conversation: {
         ...DEFAULT_BOOKSMART_CONFIG.conversation,
-        openingQuestion: "Which city is this project in?",
+        openingQuestion: "Hey, happy to help. What’s going on?",
       },
     });
 
@@ -467,9 +466,21 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(firstReply.replyText).toContain("Which city is this project in?");
+    expect(firstReply.replyText).toContain("Hey, happy to help. What’s going on?");
 
     const secondReply = await handleChatMessage(
+      {
+        sessionId: "booksmart-config-routing",
+        text: "I need an electrician",
+      },
+      storage,
+      config,
+    );
+
+    expect(secondReply.stage).toBe("collect_city");
+    expect(secondReply.handoffRequired).toBeUndefined();
+
+    const thirdReply = await handleChatMessage(
       {
         sessionId: "booksmart-config-routing",
         text: "Detroit",
@@ -478,8 +489,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(secondReply.stage).toBe("collect_service_type");
-    expect(secondReply.handoffRequired).toBeUndefined();
+    expect(thirdReply.stage).toBe("collect_address");
+    expect(thirdReply.handoffRequired).toBeUndefined();
   });
 
   it("submits a lead instead of claiming a booked slot", async () => {
@@ -499,7 +510,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
-        text: "Sterling Heights",
+        text: "I need a breaker that keeps tripping checked out",
       },
       storage,
       config,
@@ -507,7 +518,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
-        text: "I need a breaker that keeps tripping checked out",
+        text: "Sterling Heights",
       },
       storage,
       config,
@@ -547,8 +558,8 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("dispatch");
-    expect(reply.replyText.toLowerCase()).toContain("team member");
+    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText).toContain("586-489-1504");
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {
@@ -571,7 +582,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-2",
-        text: "Sterling Heights",
+        text: "I need recessed lights in my kitchen",
       },
       storage,
       config,
@@ -580,7 +591,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-3",
-        text: "I need recessed lights in my kitchen",
+        text: "Sterling Heights",
       },
       storage,
       config,
@@ -669,7 +680,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
-        text: "Sterling Heights",
+        text: "I need a breaker checked",
       },
       storage,
       config,
@@ -677,7 +688,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
-        text: "I need a breaker checked",
+        text: "Sterling Heights",
       },
       storage,
       config,
@@ -703,6 +714,69 @@ describe("BookSmart chat flow", () => {
     expect(emailPrompt.replyText.toLowerCase()).toContain("best email");
   });
 
+  it("does not set a preferred window until the customer explicitly answers that question", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "hello",
+        contact: {
+          phone: "555-333-4444",
+        },
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "Need a new panel",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "Shelby Township",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "53617 Oak Grove, Shelby Township, MI 48315",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "Nate",
+      },
+      storage,
+      config,
+    );
+
+    const emailPrompt = await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "skip",
+      },
+      storage,
+      config,
+    );
+
+    expect(emailPrompt.stage).toBe("collect_preferred_window");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("mornings or afternoons");
+
+    const session = await storage.getChatSession<ChatSessionState>("booksmart-chat-window");
+    expect(session?.payload.customer.preferredWindow).toBeUndefined();
+  });
+
   it("records urgency hits and handoff outcomes for urgent flows", async () => {
     const storage = new MemoryStorageAdapter();
 
@@ -711,14 +785,6 @@ describe("BookSmart chat flow", () => {
         sessionId: "booksmart-analytics-urgent",
         leadSource: "after_hours_text",
         text: "hello",
-      },
-      storage,
-      config,
-    );
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-analytics-urgent",
-        text: "Troy",
       },
       storage,
       config,

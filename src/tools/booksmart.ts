@@ -209,8 +209,9 @@ export async function createLeadTool(
     externalId: result.id,
     message: "Lead submitted.",
     presentation: {
-      replyText:
-        "Perfect, I’ve got this over to dispatch. A team member will be reaching out ASAP.",
+      replyText: runtimeConfig.contact.humanHandoffPhone
+        ? `Getting you scheduled shortly... If you'd like to book a service right away feel free to give us a call at ${runtimeConfig.contact.humanHandoffPhone}.`
+        : "Getting you scheduled shortly...",
       followUpPrompt:
         "Confirm that the request is in and the team will follow up with the appointment time.",
     },

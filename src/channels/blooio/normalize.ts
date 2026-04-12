@@ -45,7 +45,7 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
       stringValue(body.sessionId) ??
       stringValue(body.conversationId) ??
       stringValue(body.threadId) ??
-      internalId ??
+      normalizeConversationSessionId(externalId ?? sender, internalId) ??
       stringValue(nestedContact.id) ??
       normalizePhoneSessionId(contactPhone) ??
       normalizePhoneSessionId(customerPhone),
@@ -123,4 +123,30 @@ function normalizePhoneSessionId(value: string | undefined): string | undefined 
   }
 
   return `phone:${digits.slice(-10)}`;
+}
+
+function normalizeConversationSessionId(
+  customerValue: string | undefined,
+  businessValue: string | undefined,
+): string | undefined {
+  const customer = normalizePhoneDigits(customerValue);
+  if (!customer) {
+    return undefined;
+  }
+
+  const business = normalizePhoneDigits(businessValue);
+  return business ? `chat:${customer}:${business}` : `phone:${customer}`;
+}
+
+function normalizePhoneDigits(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return undefined;
+  }
+
+  return digits.slice(-10);
 }

@@ -119,12 +119,6 @@ export async function handleChatMessage(
   const state = mergeState(existing?.payload, sessionId, normalized, messageText, now, leadSource);
   const photoReceivedThisTurn = inferPhotoSent(normalized);
   state.analytics.photoSent = state.analytics.photoSent || photoReceivedThisTurn;
-  if (!state.customer.preferredWindow) {
-    const inferredPreferredWindow = inferPreferredWindow(messageText);
-    if (inferredPreferredWindow) {
-      state.customer.preferredWindow = inferredPreferredWindow;
-    }
-  }
   const bookSmartConfig = await loadBookSmartConfig(storage);
   appendTranscript(state, "inbound", messageText);
   await syncConversationSnapshot(storage, state, leadSource, now);
@@ -142,7 +136,9 @@ export async function handleChatMessage(
     },
   });
 
-  if (config.openai.enabled && config.openai.apiKey) {
+  const shouldUseOpenAi = config.openai.enabled && config.openai.apiKey && leadSource !== "blooio";
+
+  if (shouldUseOpenAi) {
     const aiReply = await tryHandleChatMessageWithOpenAi(
       storage,
       config,
@@ -298,11 +294,121 @@ export async function handleChatMessage(
   }
 
   if (!state.customer.city) {
+    if (state.stage === "collect_service_type") {
+      setServiceDetails(state, messageText, bookSmartConfig);
+      await recordStageOnce(storage, state, "service_identified", now, {
+        serviceTypeId: state.serviceTypeId,
+      });
+      if (state.urgency === "urgent") {
+        handoffToHuman("urgent");
+        state.stage = "human_handoff";
+        state.bookingStatus = "handoff";
+        state.analytics.lastHandoffReason = "urgent";
+        await persistUrgencyHits(storage, state, now);
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason: "urgent",
+          timestamp: now,
+          metadata: {
+            keywords: state.analytics.urgencyKeywordsDetected,
+          },
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp: now,
+          toolName: "handoff_to_human",
+          toolCallSummary: `Escalating urgent request to a human.`,
+        });
+        await recordStageOnce(storage, state, "escalated", now, {
+          reason: "urgent",
+        });
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: withHumanHandoffContact(
+            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+            config,
+          ),
+          stage: state.stage,
+          handoffRequired: true,
+        }, now);
+      }
+
+      state.stage = "collect_city";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForCity(state),
+        stage: state.stage,
+      }, now);
+    }
+
+    if (state.transcript.length <= 2 && isGreetingOnly(messageText)) {
+      state.stage = "collect_service_type";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: bookSmartConfig.conversation.openingQuestion,
+        stage: state.stage,
+      }, now);
+    }
+
+    if (state.transcript.length <= 2) {
+      setServiceDetails(state, messageText, bookSmartConfig);
+      await recordStageOnce(storage, state, "service_identified", now, {
+        serviceTypeId: state.serviceTypeId,
+      });
+      if (state.urgency === "urgent") {
+        handoffToHuman("urgent");
+        state.stage = "human_handoff";
+        state.bookingStatus = "handoff";
+        state.analytics.lastHandoffReason = "urgent";
+        await persistUrgencyHits(storage, state, now);
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason: "urgent",
+          timestamp: now,
+          metadata: {
+            keywords: state.analytics.urgencyKeywordsDetected,
+          },
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp: now,
+          toolName: "handoff_to_human",
+          toolCallSummary: `Escalating urgent request to a human.`,
+        });
+        await recordStageOnce(storage, state, "escalated", now, {
+          reason: "urgent",
+        });
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: withHumanHandoffContact(
+            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+            config,
+          ),
+          stage: state.stage,
+          handoffRequired: true,
+        }, now);
+      }
+
+      state.stage = "collect_city";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForCity(state),
+        stage: state.stage,
+      }, now);
+    }
+
     state.stage = "collect_city";
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: bookSmartConfig.conversation.openingQuestion,
+      replyText: askForCity(state),
       stage: state.stage,
     }, now);
   }
@@ -1487,11 +1593,18 @@ function personalizeReply(state: ChatSessionState, message: string): string {
 }
 
 function askForServiceType(state: ChatSessionState): string {
-  return personalizeReply(state, "what kind of electrical issue or project do you need help with?");
+  return personalizeReply(state, "what do you need help with?");
+}
+
+function askForCity(state: ChatSessionState): string {
+  if (state.customer.requestedService) {
+    return personalizeReply(state, "got it. what city is this in?");
+  }
+  return personalizeReply(state, "what city is this in?");
 }
 
 function askForAddress(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the service address?");
+  return personalizeReply(state, "what’s the address there?");
 }
 
 function askForZip(state: ChatSessionState): string {
@@ -1499,7 +1612,7 @@ function askForZip(state: ChatSessionState): string {
 }
 
 function askForFirstName(state: ChatSessionState): string {
-  return "And what’s your first name?";
+  return "what name should I put on this?";
 }
 
 function askForPhone(state: ChatSessionState): string {
@@ -1507,11 +1620,17 @@ function askForPhone(state: ChatSessionState): string {
 }
 
 function askForEmail(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the best email for you? you can say skip if you want.");
+  return personalizeReply(state, "what’s the best email for you? totally fine to skip it.");
 }
 
 function askForPreferredWindow(state: ChatSessionState): string {
   return personalizeReply(state, "do mornings or afternoons usually work better?");
+}
+
+function isGreetingOnly(text: string): boolean {
+  return /^(hi|hi there|hey|hey there|hello|hello there|yo|good morning|good afternoon|good evening|sup|what'?s up)\b[!. ]*$/i.test(
+    text.trim(),
+  );
 }
 
 function extractEmailAddress(text: string): string | undefined {

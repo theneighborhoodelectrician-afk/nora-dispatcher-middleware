@@ -70,11 +70,11 @@ describe("chat webhook", () => {
       },
       {
         messageId: "blooio-msg-2",
-        text: "Sterling Heights",
+        text: "I need help with an EV charger install",
       },
       {
         messageId: "blooio-msg-3",
-        text: "I need help with an EV charger install",
+        text: "Sterling Heights",
       },
       {
         messageId: "blooio-msg-4",
@@ -120,9 +120,7 @@ describe("chat webhook", () => {
     }
 
     expect(lastPayload?.stage).toBe("lead_submitted");
-    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("dispatch");
-    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("team member");
-    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("asap");
+    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("getting you scheduled shortly");
 
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation(sessionId);
@@ -203,7 +201,7 @@ describe("chat webhook", () => {
       }),
     });
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
-      text: expect.stringContaining("What city is the project in?"),
+      text: expect.stringContaining("What’s going on?"),
       from_number: "+12488475527",
       use_typing_indicator: true,
     });
@@ -232,8 +230,56 @@ describe("chat webhook", () => {
 
     expect(res.statusCode).toBe(200);
     const payload = JSON.parse(res.body);
-    expect(payload.sessionId).toBe("+12488475527");
-    expect(payload.replyText).toContain("What city is the project in?");
+    expect(payload.sessionId).toBe("chat:5864891504:2488475527");
+    expect(payload.replyText).toContain("What’s going on?");
+  });
+
+  it("separates native Blooio sessions by customer phone instead of the business number", async () => {
+    const firstRes = createResponseRecorder();
+    await handler({
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.received",
+        message_id: "blo-native-thread-1",
+        external_id: "+15864891504",
+        protocol: "imessage",
+        timestamp: 1776009235791,
+        internal_id: "+12488475527",
+        is_group: false,
+        text: "Hello",
+        sender: "+15864891504",
+        received_at: 1776009232569,
+      },
+    } as never, firstRes as never);
+
+    const secondRes = createResponseRecorder();
+    await handler({
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.received",
+        message_id: "blo-native-thread-2",
+        external_id: "+12487700169",
+        protocol: "imessage",
+        timestamp: 1776009236791,
+        internal_id: "+12488475527",
+        is_group: false,
+        text: "Hello",
+        sender: "+12487700169",
+        received_at: 1776009233569,
+      },
+    } as never, secondRes as never);
+
+    expect(firstRes.statusCode).toBe(200);
+    expect(secondRes.statusCode).toBe(200);
+
+    const firstPayload = JSON.parse(firstRes.body);
+    const secondPayload = JSON.parse(secondRes.body);
+
+    expect(firstPayload.sessionId).toBe("chat:5864891504:2488475527");
+    expect(secondPayload.sessionId).toBe("chat:2487700169:2488475527");
+    expect(firstPayload.sessionId).not.toBe(secondPayload.sessionId);
   });
 
   it("accepts Blooio native org webhook events without a shared-secret header", async () => {
