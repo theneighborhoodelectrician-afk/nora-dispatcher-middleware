@@ -75,6 +75,46 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText).toContain("what’s up?");
   });
 
+  it("answers a common question briefly and then pivots back to booking", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-faq-area",
+        text: "Do you service my area?",
+        contact: {
+          phone: "555-111-3333",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_city");
+    expect(reply.replyText.toLowerCase()).toContain("macomb and oakland county");
+    expect(reply.replyText.toLowerCase()).toContain("city?");
+  });
+
+  it("handles a storm-related question briefly and then moves back toward scheduling", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-faq-storm",
+        text: "What should I check before a storm?",
+        contact: {
+          phone: "555-111-4444",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_city");
+    expect(reply.replyText.toLowerCase()).toContain("mast");
+    expect(reply.replyText.toLowerCase()).toContain("city?");
+  });
+
   it("submits a lead after city, service, address, name, and time preference are collected", async () => {
     const storage = new MemoryStorageAdapter();
 

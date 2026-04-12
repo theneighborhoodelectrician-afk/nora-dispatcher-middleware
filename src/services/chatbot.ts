@@ -1,4 +1,5 @@
 import { DEFAULT_BOOKSMART_CONFIG } from "../booksmart/defaultConfig.js";
+import { buildKnowledgePivot, findKnowledgeAnswer } from "../booksmart/knowledge.js";
 import { loadBookSmartConfig } from "../booksmart/storage.js";
 import { BookSmartServiceTypeId } from "../booksmart/types.js";
 import { normalizeBlooioInboundPayload } from "../channels/blooio/normalize.js";
@@ -144,6 +145,18 @@ export async function handleChatMessage(
       messageId: normalized.messageId,
     },
   });
+
+  const knowledgeReply = await maybeHandleKnowledgeReply(
+    storage,
+    state,
+    messageText,
+    bookSmartConfig,
+    sessionId,
+    now,
+  );
+  if (knowledgeReply) {
+    return persistReply(storage, state, knowledgeReply, now);
+  }
 
   const shouldUseOpenAi = config.openai.enabled && config.openai.apiKey && leadSource !== "blooio";
 
@@ -730,6 +743,64 @@ export async function handleChatMessage(
     state.customer.preferredWindow = preferredWindow;
   }
   return submitLeadFromState(storage, state, config, sessionId, now);
+}
+
+async function maybeHandleKnowledgeReply(
+  storage: StorageAdapter,
+  state: ChatSessionState,
+  messageText: string,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  sessionId: string,
+  timestamp: number,
+): Promise<ChatReplyPayload | undefined> {
+  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+    return undefined;
+  }
+
+  if (detectUrgency(messageText, bookSmartConfig).urgent) {
+    return undefined;
+  }
+
+  if (!looksLikeKnowledgeQuestion(messageText)) {
+    return undefined;
+  }
+
+  const match = findKnowledgeAnswer(messageText);
+  if (!match) {
+    return undefined;
+  }
+
+  if (match.serviceSignal && !state.customer.requestedService) {
+    const classified = classifyServiceType(messageText, bookSmartConfig);
+    if (classified.matched) {
+      setServiceDetails(state, messageText, bookSmartConfig);
+      await recordStageOnce(storage, state, "service_identified", timestamp, {
+        serviceTypeId: state.serviceTypeId,
+      });
+    }
+  }
+
+  const followUp = match.pivotOverride ?? buildNextBookingPrompt(state);
+  const replyText = followUp ? `${match.answer} ${followUp}` : match.answer;
+
+  await recordMessage(storage, {
+    conversationId: state.sessionId,
+    direction: "tool",
+    timestamp,
+    toolName: "knowledge_answer",
+    toolCallSummary: "Answered an approved customer question and guided the conversation back to booking.",
+    metadata: {
+      answer: match.answer,
+      followUp,
+    },
+  });
+
+  return {
+    success: true,
+    sessionId,
+    replyText,
+    stage: deriveStageFromState(state),
+  };
 }
 
 function mergeState(
@@ -1628,6 +1699,42 @@ function isGreetingOnly(text: string): boolean {
   return /^(hi|hi there|hey|hey there|hello|hello there|yo|good morning|good afternoon|good evening|sup|what'?s up)\b[!. ]*$/i.test(
     text.trim(),
   );
+}
+
+function looksLikeKnowledgeQuestion(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    normalized.includes("?") ||
+    /^(do|does|did|can|are|is|how|what|when|will|would|should|could)\b/.test(normalized)
+  );
+}
+
+function buildNextBookingPrompt(state: ChatSessionState): string {
+  if (!state.customer.city) {
+    return askForCity(state);
+  }
+  if (!state.customer.requestedService) {
+    return buildKnowledgePivot();
+  }
+  if (!state.customer.address) {
+    return askForAddress(state);
+  }
+  if (!state.customer.zipCode) {
+    return askForZip(state);
+  }
+  if (!state.customer.firstName) {
+    return askForFirstName(state);
+  }
+  if (!state.customer.phone) {
+    return askForPhone(state);
+  }
+  if (!state.customer.email) {
+    return askForEmail(state);
+  }
+  if (!state.customer.preferredWindow) {
+    return askForPreferredWindow(state);
+  }
+  return buildKnowledgePivot();
 }
 
 function extractEmailAddress(text: string): string | undefined {
