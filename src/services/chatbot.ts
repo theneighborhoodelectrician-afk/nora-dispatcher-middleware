@@ -328,7 +328,7 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: withHumanHandoffContact(
-            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+            personalizeReply(state, "that sounds urgent. pulling someone in now."),
             config,
           ),
           stage: state.stage,
@@ -388,7 +388,7 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: withHumanHandoffContact(
-            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+            personalizeReply(state, "that sounds urgent. pulling someone in now."),
             config,
           ),
           stage: state.stage,
@@ -445,7 +445,7 @@ export async function handleChatMessage(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        personalizeReply(state, "Got it. That area needs a quick manual review first."),
+        personalizeReply(state, "got it. need to check that area first."),
         config,
       ),
       stage: state.stage,
@@ -494,7 +494,7 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: withHumanHandoffContact(
-            personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+            personalizeReply(state, "that sounds urgent. pulling someone in now."),
             config,
           ),
           stage: state.stage,
@@ -551,7 +551,7 @@ export async function handleChatMessage(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+        personalizeReply(state, "that sounds urgent. pulling someone in now."),
         config,
       ),
       stage: state.stage,
@@ -1286,7 +1286,7 @@ async function enforceBookSmartGuards(
       success: true,
       sessionId,
       replyText: withHumanHandoffContact(
-        personalizeReply(state, "That sounds urgent, so I’m pulling a real person in right now."),
+        personalizeReply(state, "that sounds urgent. pulling someone in now."),
         config,
       ),
       stage: state.stage,
@@ -1311,13 +1311,13 @@ async function enforceBookSmartGuards(
       await recordStageOnce(storage, state, "escalated", timestamp, {
         reason: "outside_service_area",
       });
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: withHumanHandoffContact(
-          personalizeReply(state, "Got it. That area needs a quick manual review first."),
-          config,
-        ),
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: withHumanHandoffContact(
+            personalizeReply(state, "got it. need to check that area first."),
+            config,
+          ),
         stage: state.stage,
         handoffRequired: true,
       }, timestamp);

@@ -149,7 +149,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
     expect(reply.replyText).toContain("586-489-1504");
   });
 
@@ -212,7 +212,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -364,7 +364,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
     expect(reply.replyText).toContain("586-489-1504");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
@@ -439,7 +439,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("human_handoff");
     expect(reply.handoffRequired).toBe(true);
-    expect(reply.replyText.toLowerCase()).toContain("manual review");
+    expect(reply.replyText.toLowerCase()).toContain("need to check that area first");
     expect(reply.replyText).toContain("586-489-1504");
   });
 
@@ -558,7 +558,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("getting you scheduled shortly");
+    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
     expect(reply.replyText).toContain("586-489-1504");
   });
 

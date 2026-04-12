@@ -120,7 +120,7 @@ describe("chat webhook", () => {
     }
 
     expect(lastPayload?.stage).toBe("lead_submitted");
-    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("getting you scheduled shortly");
+    expect(String(lastPayload?.replyText ?? "").toLowerCase()).toContain("i'll get it on the calendar asap");
 
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation(sessionId);
