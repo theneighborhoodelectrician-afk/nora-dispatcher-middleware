@@ -60,6 +60,9 @@ export interface AppConfig {
   };
   blooio: {
     webhookSecret?: string;
+    apiKey?: string;
+    baseUrl: string;
+    fromNumber?: string;
   };
   admin: {
     secret?: string;
@@ -110,6 +113,9 @@ export function getConfig(): AppConfig {
     },
     blooio: {
       webhookSecret: process.env.BLOOIO_WEBHOOK_SECRET,
+      apiKey: process.env.BLOOIO_API_KEY,
+      baseUrl: process.env.BLOOIO_API_BASE_URL ?? "https://backend.blooio.com/v2/api",
+      fromNumber: normalizeE164Phone(process.env.BLOOIO_FROM_NUMBER),
     },
     admin: {
       secret: process.env.ADMIN_SECRET,
@@ -152,4 +158,21 @@ function normalizeDisplayPhone(value: string | undefined): string | undefined {
 
 function toTelHref(value: string): string {
   return `tel:+1${value.replace(/\D/g, "")}`;
+}
+
+function normalizeE164Phone(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return undefined;
+  }
+
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  return `+${digits}`;
 }

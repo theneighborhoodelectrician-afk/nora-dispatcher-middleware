@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import handler from "../api/webhooks/chat.js";
 import { getConfig } from "../src/config.js";
 import { getStorageAdapter } from "../src/storage/index.js";
@@ -26,6 +26,12 @@ function createResponseRecorder() {
 }
 
 describe("chat webhook", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.BLOOIO_API_KEY;
+    delete process.env.BLOOIO_FROM_NUMBER;
+  });
+
   it("returns the cached response for duplicate message deliveries", async () => {
     const req = {
       method: "POST",
@@ -154,5 +160,52 @@ describe("chat webhook", () => {
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation("phone:5865550142");
     expect(conversation?.leadSource).toBe("blooio");
+  });
+
+  it("sends the reply back through Blooio when outbound messaging is configured", async () => {
+    process.env.BLOOIO_API_KEY = "test-blooio-key";
+    process.env.BLOOIO_FROM_NUMBER = "+12488475527";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: vi.fn().mockResolvedValue(""),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = {
+      method: "POST",
+      headers: {},
+      body: {
+        messageId: "blooio-send-1",
+        sessionId: "blooio-send-session-1",
+        source: "blooio",
+        text: "hello",
+        contact: {
+          phone: "+15865550188",
+        },
+      },
+    };
+
+    const res = createResponseRecorder();
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://backend.blooio.com/v2/api/chats/%2B15865550188/messages",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({
+        Authorization: "Bearer test-blooio-key",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "reply:blooio-send-1",
+      }),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      text: expect.stringContaining("What city is the project in?"),
+      from_number: "+12488475527",
+      use_typing_indicator: true,
+    });
   });
 });

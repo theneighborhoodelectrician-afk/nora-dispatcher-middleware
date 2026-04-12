@@ -22,7 +22,7 @@ export interface StoredResult<T = unknown> {
 export interface WebhookEventRecord {
   webhookId: string;
   kind: "availability" | "booking" | "chat";
-  phase: "received" | "cached_response" | "processed" | "error";
+  phase: "received" | "cached_response" | "processed" | "outbound_sent" | "outbound_error" | "error";
   payload: unknown;
   createdAt: number;
 }

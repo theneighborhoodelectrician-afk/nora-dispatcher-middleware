@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
+import { sendBlooioMessage } from "../../src/channels/blooio/client.js";
 import { normalizeBlooioInboundPayload } from "../../src/channels/blooio/normalize.js";
 import { getConfig } from "../../src/config.js";
 import { verifyWebhookAuth } from "../../src/integrations/gohighlevel.js";
@@ -80,6 +81,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     };
 
     const reply = await handleChatMessage(body, storage, config);
+    if (body.source === "blooio" && config.blooio.apiKey) {
+      const normalized = normalizeBlooioInboundPayload(body);
+      const chatId =
+        normalized.contact?.phone ??
+        normalized.customer?.phone ??
+        normalized.sessionId;
+
+      if (chatId) {
+        try {
+          console.log("[blooio] outbound_send_attempt", {
+            webhookId,
+            chatId,
+            stage: reply.stage,
+            hasApiKey: Boolean(config.blooio.apiKey),
+            fromNumber: config.blooio.fromNumber,
+          });
+          await sendBlooioMessage(
+            {
+              chatId,
+              text: reply.replyText,
+              idempotencyKey: `reply:${webhookId}`,
+            },
+            config,
+          );
+          await storage.logWebhookEvent({
+            webhookId,
+            kind: "chat",
+            phase: "outbound_sent",
+            payload: {
+              chatId,
+              stage: reply.stage,
+            },
+            createdAt: Date.now(),
+          });
+          console.log("[blooio] outbound_send_success", {
+            webhookId,
+            chatId,
+            stage: reply.stage,
+          });
+        } catch (outboundError) {
+          console.error("[blooio] outbound_send_error", {
+            webhookId,
+            chatId,
+            error: outboundError instanceof Error ? outboundError.message : String(outboundError),
+          });
+          await storage.logWebhookEvent({
+            webhookId,
+            kind: "chat",
+            phase: "outbound_error",
+            payload: {
+              chatId,
+              error: outboundError instanceof Error ? outboundError.message : String(outboundError),
+            },
+            createdAt: Date.now(),
+          });
+        }
+      }
+    }
     await storage.storeIdempotentResult(webhookId, reply);
     await storage.logWebhookEvent({
       webhookId,

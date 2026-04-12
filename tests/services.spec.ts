@@ -31,7 +31,9 @@ const config: AppConfig = {
     createLeadPath: "/leads",
   },
   ghl: {},
-  blooio: {},
+  blooio: {
+    baseUrl: "https://backend.blooio.com/v2/api",
+  },
   admin: {},
   storage: {
     autoInit: true,

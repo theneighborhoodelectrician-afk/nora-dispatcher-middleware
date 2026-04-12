@@ -340,6 +340,13 @@ You can protect this route with either:
 
 using `BLOOIO_WEBHOOK_SECRET` as the shared secret.
 
+To send the assistant reply back into the same Blooio conversation, also set:
+
+- `BLOOIO_API_KEY`
+- optional `BLOOIO_FROM_NUMBER`
+
+BookSmart will then POST the returned `replyText` to Blooio's chat send API.
+
 ## GoHighLevel webhook auth
 
 The API accepts either of these auth methods:
