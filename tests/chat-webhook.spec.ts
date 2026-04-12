@@ -208,4 +208,31 @@ describe("chat webhook", () => {
       use_typing_indicator: true,
     });
   });
+
+  it("accepts Blooio's native message.received payload shape", async () => {
+    const req = {
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.received",
+        message_id: "blo-native-1",
+        external_id: "+15864891504",
+        protocol: "imessage",
+        timestamp: 1776007457528,
+        internal_id: "+12488475527",
+        is_group: false,
+        text: "Hi",
+        sender: "+15864891504",
+        received_at: 1776007455034,
+      },
+    };
+
+    const res = createResponseRecorder();
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body);
+    expect(payload.sessionId).toBe("+12488475527");
+    expect(payload.replyText).toContain("What city is the project in?");
+  });
 });
