@@ -72,7 +72,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText).toContain("What’s going on?");
+    expect(reply.replyText).toContain("what’s up?");
   });
 
   it("submits a lead after city, service, address, name, and time preference are collected", async () => {
@@ -136,7 +136,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailReply.stage).toBe("collect_preferred_window");
-    expect(emailReply.replyText.toLowerCase()).toContain("mornings or afternoons");
+    expect(emailReply.replyText.toLowerCase()).toContain("morning or afternoon");
 
     const reply = await handleChatMessage(
       {
@@ -453,7 +453,7 @@ describe("BookSmart chat flow", () => {
       },
       conversation: {
         ...DEFAULT_BOOKSMART_CONFIG.conversation,
-        openingQuestion: "Hey, happy to help. What’s going on?",
+        openingQuestion: "hey - what’s up?",
       },
     });
 
@@ -466,7 +466,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(firstReply.replyText).toContain("Hey, happy to help. What’s going on?");
+    expect(firstReply.replyText).toContain("hey - what’s up?");
 
     const secondReply = await handleChatMessage(
       {
@@ -711,7 +711,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailPrompt.stage).toBe("collect_email");
-    expect(emailPrompt.replyText.toLowerCase()).toContain("best email");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("email? or skip it.");
   });
 
   it("does not set a preferred window until the customer explicitly answers that question", async () => {
@@ -771,7 +771,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailPrompt.stage).toBe("collect_preferred_window");
-    expect(emailPrompt.replyText.toLowerCase()).toContain("mornings or afternoons");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("morning or afternoon");
 
     const session = await storage.getChatSession<ChatSessionState>("booksmart-chat-window");
     expect(session?.payload.customer.preferredWindow).toBeUndefined();

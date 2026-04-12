@@ -117,6 +117,15 @@ export async function handleChatMessage(
   const leadSource = normalizeLeadSource(normalized.leadSource);
   const existing = await storage.getChatSession<ChatSessionState>(sessionId);
   const state = mergeState(existing?.payload, sessionId, normalized, messageText, now, leadSource);
+  if (isLeadOnlyLaunch(config)) {
+    state.lastOfferedOptions = undefined;
+    if (state.bookingStatus === "offered") {
+      state.bookingStatus = "collecting";
+    }
+    if (state.stage === "offer_slots") {
+      state.stage = deriveStageFromState(state);
+    }
+  }
   const photoReceivedThisTurn = inferPhotoSent(normalized);
   state.analytics.photoSent = state.analytics.photoSent || photoReceivedThisTurn;
   const bookSmartConfig = await loadBookSmartConfig(storage);
@@ -151,14 +160,6 @@ export async function handleChatMessage(
     if (aiReply) {
       return aiReply;
     }
-  }
-
-  if (isLeadOnlyLaunch(config) && state.stage === "offer_slots") {
-    state.lastOfferedOptions = undefined;
-    if (state.bookingStatus === "offered") {
-      state.bookingStatus = "collecting";
-    }
-    state.stage = deriveStageFromState(state);
   }
 
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
@@ -925,10 +926,10 @@ function inferFirstName(text: string): string {
 
 function inferPreferredWindow(text: string): "morning" | "afternoon" | undefined {
   const normalized = text.toLowerCase();
-  if (/\b(morning|am|earlier|first half)\b/.test(normalized)) {
+  if (/\b(morning|mornings|am|earlier|first half)\b/.test(normalized)) {
     return "morning";
   }
-  if (/\b(afternoon|pm|later|second half)\b/.test(normalized)) {
+  if (/\b(afternoon|afternoons|pm|later|second half)\b/.test(normalized)) {
     return "afternoon";
   }
   return undefined;
@@ -1588,43 +1589,39 @@ function withHumanHandoffContact(replyText: string, config: AppConfig): string {
 }
 
 function personalizeReply(state: ChatSessionState, message: string): string {
-  const name = state.customer.firstName?.trim();
-  return name ? `${capitalize(name)}, ${message}` : message;
+  return message;
 }
 
 function askForServiceType(state: ChatSessionState): string {
-  return personalizeReply(state, "what do you need help with?");
+  return personalizeReply(state, "what’s up?");
 }
 
 function askForCity(state: ChatSessionState): string {
-  if (state.customer.requestedService) {
-    return personalizeReply(state, "got it. what city is this in?");
-  }
-  return personalizeReply(state, "what city is this in?");
+  return personalizeReply(state, "city?");
 }
 
 function askForAddress(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the address there?");
+  return personalizeReply(state, "address?");
 }
 
 function askForZip(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the ZIP there?");
+  return personalizeReply(state, "zip?");
 }
 
 function askForFirstName(state: ChatSessionState): string {
-  return "what name should I put on this?";
+  return "name?";
 }
 
 function askForPhone(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the best number for you?");
+  return personalizeReply(state, "best #?");
 }
 
 function askForEmail(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the best email for you? totally fine to skip it.");
+  return personalizeReply(state, "email? or skip it.");
 }
 
 function askForPreferredWindow(state: ChatSessionState): string {
-  return personalizeReply(state, "do mornings or afternoons usually work better?");
+  return personalizeReply(state, "morning or afternoon?");
 }
 
 function isGreetingOnly(text: string): boolean {

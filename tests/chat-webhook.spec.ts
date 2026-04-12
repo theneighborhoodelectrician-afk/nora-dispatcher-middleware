@@ -201,7 +201,7 @@ describe("chat webhook", () => {
       }),
     });
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
-      text: expect.stringContaining("What’s going on?"),
+      text: expect.stringContaining("what’s up?"),
       from_number: "+12488475527",
       use_typing_indicator: true,
     });
@@ -231,7 +231,7 @@ describe("chat webhook", () => {
     expect(res.statusCode).toBe(200);
     const payload = JSON.parse(res.body);
     expect(payload.sessionId).toBe("chat:5864891504:2488475527");
-    expect(payload.replyText).toContain("What’s going on?");
+    expect(payload.replyText).toContain("what’s up?");
   });
 
   it("separates native Blooio sessions by customer phone instead of the business number", async () => {
