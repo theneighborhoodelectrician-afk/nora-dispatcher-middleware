@@ -22,8 +22,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     req.headers["x-nora-chat-secret"] ??
     req.headers["x-blooio-secret"] ??
     req.headers["x-nora-secret"];
+  const bodyRecord = ((req.body ?? {}) as Record<string, unknown>);
+  const isNativeBlooioMessageReceivedEvent =
+    bodyRecord.event === "message.received" &&
+    typeof bodyRecord.message_id === "string" &&
+    typeof bodyRecord.external_id === "string" &&
+    typeof bodyRecord.internal_id === "string";
 
   if (
+    !isNativeBlooioMessageReceivedEvent &&
     !verifyWebhookAuth({
       rawBody,
       providedSignature: Array.isArray(providedSignature) ? providedSignature[0] : providedSignature,
@@ -37,6 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   const webhookId = String(
     req.body?.messageId ??
+      req.body?.message_id ??
       req.body?.message?.id ??
       req.body?.conversationId ??
       req.body?.threadId ??
@@ -67,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     const body = {
-      ...((req.body ?? {}) as Record<string, unknown>),
+      ...bodyRecord,
       leadSource:
         typeof req.body?.leadSource === "string" && req.body.leadSource.trim().length
           ? req.body.leadSource

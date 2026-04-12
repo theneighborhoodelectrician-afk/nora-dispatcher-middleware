@@ -235,4 +235,42 @@ describe("chat webhook", () => {
     expect(payload.sessionId).toBe("+12488475527");
     expect(payload.replyText).toContain("What city is the project in?");
   });
+
+  it("accepts Blooio native org webhook events without a shared-secret header", async () => {
+    const originalSecret = process.env.BLOOIO_WEBHOOK_SECRET;
+    process.env.BLOOIO_WEBHOOK_SECRET = "whsec_launch_override";
+
+    try {
+      const req = {
+        method: "POST",
+        headers: {},
+        body: {
+          event: "message.received",
+          message_id: "blo-native-no-header-1",
+          external_id: "+15864891504",
+          protocol: "imessage",
+          timestamp: 1776009235791,
+          internal_id: "+12488475527",
+          is_group: false,
+          text: "Hello",
+          sender: "+15864891504",
+          received_at: 1776009232569,
+        },
+      };
+
+      const res = createResponseRecorder();
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(200);
+      const payload = JSON.parse(res.body);
+      expect(payload.success).toBe(true);
+      expect(typeof payload.replyText).toBe("string");
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.BLOOIO_WEBHOOK_SECRET;
+      } else {
+        process.env.BLOOIO_WEBHOOK_SECRET = originalSecret;
+      }
+    }
+  });
 });
