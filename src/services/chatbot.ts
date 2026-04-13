@@ -872,7 +872,9 @@ async function maybeHandleKnowledgeReply(
     }
   }
 
-  const followUp = match.pivotOverride ?? buildNextBookingPrompt(state);
+  const followUp = match.suppressAutoPivot
+    ? undefined
+    : match.pivotOverride ?? buildNextBookingPrompt(state);
   const replyText = followUp ? `${match.answer} ${followUp}` : match.answer;
 
   await recordMessage(storage, {
@@ -1852,6 +1854,7 @@ function looksLikeKnowledgeQuestion(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   return (
     normalized.includes("?") ||
+    /\b(ask some questions first|have some questions first|questions first|ask a question|ask some questions)\b/.test(normalized) ||
     /^(do|does|did|can|are|is|how|what|when|will|would|should|could)\b/.test(normalized)
   );
 }

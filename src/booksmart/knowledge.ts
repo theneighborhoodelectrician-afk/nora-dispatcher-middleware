@@ -4,12 +4,23 @@ export interface KnowledgeAnswerMatch {
   answer: string;
   pivotOverride?: string;
   serviceSignal?: boolean;
+  suppressAutoPivot?: boolean;
 }
 
 export function findKnowledgeAnswer(text: string): KnowledgeAnswerMatch | undefined {
   const normalized = text.trim().toLowerCase();
 
-  const matchers: Array<{ patterns: RegExp[]; answer: string; pivotOverride?: string; serviceSignal?: boolean }> = [
+  const matchers: Array<{ patterns: RegExp[]; answer: string; pivotOverride?: string; serviceSignal?: boolean; suppressAutoPivot?: boolean }> = [
+    {
+      patterns: [/\b(ask some questions first|have some questions first|questions first)\b/],
+      answer: "yep - ask away.",
+      suppressAutoPivot: true,
+    },
+    {
+      patterns: [/\b(is that all you can ask|that all you can ask|all you can ask me)\b/],
+      answer: "no - ask whatever you want.",
+      suppressAutoPivot: true,
+    },
     {
       patterns: [/\b(do you service|service my area|serve my area|service area)\b/],
       answer: "Yep, we cover Macomb and Oakland County.",
@@ -140,6 +151,7 @@ export function findKnowledgeAnswer(text: string): KnowledgeAnswerMatch | undefi
         answer: matcher.answer,
         pivotOverride: matcher.pivotOverride,
         serviceSignal: matcher.serviceSignal,
+        suppressAutoPivot: matcher.suppressAutoPivot,
       };
     }
   }

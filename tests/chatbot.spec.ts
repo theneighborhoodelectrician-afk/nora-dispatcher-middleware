@@ -173,6 +173,45 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toContain("city?");
   });
 
+  it("lets the customer ask questions first without forcing intake immediately", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-questions-first",
+        text: "I'd like to ask some questions first",
+        contact: {
+          phone: "555-111-5656",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_city");
+    expect(reply.replyText.toLowerCase()).toContain("ask away");
+    expect(reply.replyText.toLowerCase()).not.toContain("city?");
+  });
+
+  it("responds naturally when the customer pushes back on the questions", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-pushback-questions",
+        text: "Is that all you can ask me?",
+        contact: {
+          phone: "555-111-5757",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.replyText.toLowerCase()).toContain("ask whatever you want");
+    expect(reply.replyText.toLowerCase()).not.toContain("city?");
+  });
+
   it("handles a storm-related question briefly and then moves back toward scheduling", async () => {
     const storage = new MemoryStorageAdapter();
 
