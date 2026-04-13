@@ -885,7 +885,7 @@ async function maybeHandleKnowledgeReply(
   sessionId: string,
   timestamp: number,
 ): Promise<ChatReplyPayload | undefined> {
-  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+  if (state.bookingStatus === "handoff") {
     return undefined;
   }
 
@@ -1001,7 +1001,7 @@ function mergeState(
   timestamp: number,
   leadSource: LeadSourceCode,
 ): ChatSessionState {
-  const baseState = current && !isTerminalSessionState(current)
+  const baseState = current && shouldReuseExistingSession(current, messageText)
     ? current
     : undefined;
 
@@ -1030,6 +1030,14 @@ function mergeState(
   }
 
   return next;
+}
+
+function shouldReuseExistingSession(state: ChatSessionState, messageText: string): boolean {
+  if (!isTerminalSessionState(state)) {
+    return true;
+  }
+
+  return !looksLikeFreshConversationStart(messageText);
 }
 
 function isTerminalSessionState(state: ChatSessionState): boolean {
@@ -1890,7 +1898,7 @@ function shouldUseOpenAiAnswerLayer(
     return false;
   }
 
-  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+  if (state.bookingStatus === "handoff") {
     return false;
   }
 
@@ -1919,7 +1927,7 @@ function shouldUseOpenAiConversationFlow(
     return false;
   }
 
-  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+  if (state.bookingStatus === "handoff") {
     return false;
   }
 
@@ -1987,7 +1995,7 @@ function askForPhone(state: ChatSessionState): string {
 }
 
 function askForEmail(state: ChatSessionState): string {
-  return personalizeReply(state, "email? or skip it.");
+  return personalizeReply(state, "email?");
 }
 
 function askForPreferredWindow(state: ChatSessionState): string {
@@ -2013,10 +2021,15 @@ function looksLikeOpenAiAnswerLayerMessage(
     isGreetingOnly(normalized) ||
     isGenericHelpRequest(normalized) ||
     looksLikeKnowledgeQuestion(normalized) ||
+    looksLikeConversationPushback(normalized) ||
     (!state.customer.requestedService && !classifyServiceType(normalized, config).matched) ||
     /\b(talk to a person|call me|call instead|text instead|have some questions first|ask away)\b/.test(normalized) ||
     /\b(i have some questions|can i ask|before i book|before i schedule)\b/.test(normalized)
   );
+}
+
+function looksLikeConversationPushback(text: string): boolean {
+  return /\b(i already told you|already gave you|you already asked|didn'?t i already|i just told you|you forgot|that doesn'?t make sense)\b/.test(text);
 }
 
 function looksLikeStructuredReplyForCurrentStage(
@@ -2125,7 +2138,24 @@ function looksLikeKnowledgeQuestion(text: string): boolean {
   );
 }
 
+function looksLikeFreshConversationStart(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    isGreetingOnly(normalized) ||
+    isGenericHelpRequest(normalized) ||
+    /\b(new issue|another issue|different issue|new job|another job|need an electrician|need electrical help|need some electrical help)\b/.test(normalized) ||
+    classifyServiceType(normalized, DEFAULT_BOOKSMART_CONFIG).matched
+  );
+}
+
 function buildNextBookingPrompt(state: ChatSessionState): string {
+  if (state.bookingStatus === "lead_submitted") {
+    return "anything else you want me to add?";
+  }
   if (!state.customer.requestedService) {
     return askForServiceType(state);
   }

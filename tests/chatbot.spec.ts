@@ -303,6 +303,68 @@ describe("BookSmart chat flow", () => {
     expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
   });
 
+  it("keeps the existing context after lead submission when the customer asks a follow-up question", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
+    const sessionId = "booksmart-follow-up-after-lead";
+
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "flickering lights",
+        contact: {
+          phone: "586-222-3333",
+        },
+      },
+      storage,
+      aiConfig,
+    );
+    await handleChatMessage({ sessionId, text: "Fraser" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "22311 Garfield" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "48026" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "Brad Mumma" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "brad@example.com" }, storage, aiConfig);
+    const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, aiConfig);
+
+    expect(leadReply.stage).toBe("lead_submitted");
+
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "resp_followup_1",
+        output_text: "Dispatch will text or call once they lock in the time.",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const followUpReply = await handleChatMessage(
+      {
+        sessionId,
+        text: "When will I know when you are coming?",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(followUpReply.replyText.toLowerCase()).toContain("dispatch will text or call");
+    expect(followUpReply.replyText.toLowerCase()).not.toContain("what city");
+    expect(followUpReply.replyText.toLowerCase()).not.toContain("address?");
+
+    const storedSession = await storage.getChatSession<ChatSessionState>(sessionId);
+    expect(storedSession?.payload.customer.city).toBe("Fraser");
+    expect(storedSession?.payload.customer.address).toBe("22311 Garfield");
+    expect(storedSession?.payload.customer.zipCode).toBe("48026");
+    expect(storedSession?.payload.bookingStatus).toBe("lead_submitted");
+  });
+
   it("submits a lead after city, service, address, name, and time preference are collected", async () => {
     const storage = new MemoryStorageAdapter();
 
@@ -952,7 +1014,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailPrompt.stage).toBe("collect_email");
-    expect(emailPrompt.replyText.toLowerCase()).toContain("email? or skip it.");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("email?");
   });
 
   it("does not set a preferred window until the customer explicitly answers that question", async () => {
