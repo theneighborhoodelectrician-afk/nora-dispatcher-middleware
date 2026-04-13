@@ -319,4 +319,33 @@ describe("chat webhook", () => {
       }
     }
   });
+
+  it("acknowledges Blooio status events without treating them like chat messages", async () => {
+    const req = {
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.read",
+        status: "read",
+        message_id: "blo-status-1",
+        external_id: "+15865310369",
+        protocol: "rcs",
+        timestamp: 1776022368997,
+        internal_id: "+12488475527",
+        is_group: false,
+        text: "morning or afternoon?",
+        read_at: 1776022368005,
+      },
+    };
+
+    const res = createResponseRecorder();
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      success: true,
+      ignored: true,
+      event: "message.read",
+    });
+  });
 });

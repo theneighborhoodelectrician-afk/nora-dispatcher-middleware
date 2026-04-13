@@ -23,11 +23,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     req.headers["x-blooio-secret"] ??
     req.headers["x-nora-secret"];
   const bodyRecord = ((req.body ?? {}) as Record<string, unknown>);
+  const blooioEvent = typeof bodyRecord.event === "string" ? bodyRecord.event : "";
   const isNativeBlooioMessageReceivedEvent =
-    bodyRecord.event === "message.received" &&
+    blooioEvent === "message.received" &&
     typeof bodyRecord.message_id === "string" &&
     typeof bodyRecord.external_id === "string" &&
     typeof bodyRecord.internal_id === "string";
+  const isBlooioStatusEvent =
+    blooioEvent === "message.read" ||
+    blooioEvent === "message.delivered" ||
+    blooioEvent === "message.sent";
+
+  if (isBlooioStatusEvent) {
+    sendJson(res, 200, {
+      success: true,
+      ignored: true,
+      event: blooioEvent,
+    });
+    return;
+  }
 
   if (
     !isNativeBlooioMessageReceivedEvent &&
