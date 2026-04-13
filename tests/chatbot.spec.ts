@@ -115,6 +115,47 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toContain("city?");
   });
 
+  it("starts a fresh intake after a completed lead instead of reusing the closed session", async () => {
+    const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-restart-after-lead";
+
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "I need a panel upgrade",
+        contact: {
+          phone: "586-111-2222",
+        },
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage({ sessionId, text: "Shelby Township" }, storage, config);
+    await handleChatMessage({ sessionId, text: "53617 Oak Grove" }, storage, config);
+    await handleChatMessage({ sessionId, text: "48315" }, storage, config);
+    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
+    await handleChatMessage({ sessionId, text: "nate@example.com" }, storage, config);
+    const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, config);
+
+    expect(leadReply.stage).toBe("lead_submitted");
+
+    const restartReply = await handleChatMessage(
+      {
+        sessionId,
+        text: "I'd like to get an electrician over to the job",
+        contact: {
+          phone: "586-111-2222",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(restartReply.stage).toBe("collect_city");
+    expect(restartReply.replyText.toLowerCase()).toContain("city?");
+    expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
+  });
+
   it("submits a lead after city, service, address, name, and time preference are collected", async () => {
     const storage = new MemoryStorageAdapter();
 

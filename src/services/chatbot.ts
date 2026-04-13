@@ -811,7 +811,11 @@ function mergeState(
   timestamp: number,
   leadSource: LeadSourceCode,
 ): ChatSessionState {
-  const next: ChatSessionState = current ?? {
+  const baseState = current && !isTerminalSessionState(current)
+    ? current
+    : undefined;
+
+  const next: ChatSessionState = baseState ?? {
     sessionId,
     stage: "collect_city",
     customer: {},
@@ -836,6 +840,14 @@ function mergeState(
   }
 
   return next;
+}
+
+function isTerminalSessionState(state: ChatSessionState): boolean {
+  return (
+    state.bookingStatus === "lead_submitted" ||
+    state.bookingStatus === "handoff" ||
+    state.bookingStatus === "booked"
+  );
 }
 
 function setServiceDetails(
