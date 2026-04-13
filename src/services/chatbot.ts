@@ -19,7 +19,11 @@ import {
 import { ConversationStage, LeadSourceCode } from "../conversations/types.js";
 import { CustomerRequest, PresentedSlotOption } from "../domain/types.js";
 import { AppError } from "../lib/errors.js";
-import { buildBookSmartSystemPrompt } from "../prompts/booksmartSystemPrompt.js";
+import {
+  buildBookSmartAnswerLayerKnowledgeContext,
+  buildBookSmartAnswerLayerPrompt,
+  buildBookSmartSystemPrompt,
+} from "../prompts/booksmartSystemPrompt.js";
 import { chatWebhookSchema } from "../schemas/chat.js";
 import { StorageAdapter } from "../storage/types.js";
 import {
@@ -146,6 +150,19 @@ export async function handleChatMessage(
     },
   });
 
+  const openAiAnswerReply = await maybeHandleOpenAiAnswerLayer(
+    storage,
+    config,
+    bookSmartConfig,
+    state,
+    messageText,
+    sessionId,
+    now,
+  );
+  if (openAiAnswerReply) {
+    return openAiAnswerReply;
+  }
+
   const knowledgeReply = await maybeHandleKnowledgeReply(
     storage,
     state,
@@ -158,7 +175,7 @@ export async function handleChatMessage(
     return persistReply(storage, state, knowledgeReply, now);
   }
 
-  const shouldUseOpenAi = config.openai.enabled && config.openai.apiKey && leadSource !== "blooio";
+  const shouldUseOpenAi = config.openai.enabled && config.openai.apiKey && shouldUseOpenAiStructuredFlow(state, messageText);
 
   if (shouldUseOpenAi) {
     const aiReply = await tryHandleChatMessageWithOpenAi(
@@ -476,6 +493,23 @@ export async function handleChatMessage(
         replyText: "got you. what’s going on?",
         stage: state.stage,
       }, now);
+    }
+
+    if (state.transcript.length <= 2) {
+      const cityCandidate = inferCityReply(messageText, bookSmartConfig);
+      if (cityCandidate) {
+        state.customer.city = cityCandidate;
+        state.stage = "collect_service_type";
+        await recordStageOnce(storage, state, "city_collected", now, {
+          city: state.customer.city,
+        });
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForServiceType(state),
+          stage: state.stage,
+        }, now);
+      }
     }
 
     if (state.transcript.length <= 2) {
@@ -915,6 +949,62 @@ async function maybeHandleKnowledgeReply(
   };
 }
 
+async function maybeHandleOpenAiAnswerLayer(
+  storage: StorageAdapter,
+  config: AppConfig,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  state: ChatSessionState,
+  messageText: string,
+  sessionId: string,
+  timestamp: number,
+): Promise<ChatReplyPayload | undefined> {
+  if (!shouldUseOpenAiAnswerLayer(config, bookSmartConfig, state, messageText)) {
+    return undefined;
+  }
+
+  try {
+    const result = await runOpenAiResponses({
+      apiKey: config.openai.apiKey!,
+      baseUrl: config.openai.baseUrl,
+      model: config.openai.model,
+      systemPrompt: buildBookSmartAnswerLayerPrompt(bookSmartConfig),
+      inputText: buildOpenAiAnswerLayerInput(state, messageText, config),
+    });
+
+    if (!result.outputText) {
+      return undefined;
+    }
+
+    await recordMessage(storage, {
+      conversationId: state.sessionId,
+      direction: "tool",
+      timestamp,
+      toolName: "openai_answer_layer",
+      toolCallSummary: "Answered a freeform customer question with booking guard rails.",
+      metadata: {
+        model: config.openai.model,
+        trace: result.trace,
+        outputText: result.outputText,
+      },
+    });
+
+    return persistReply(
+      storage,
+      state,
+      {
+        success: true,
+        sessionId,
+        replyText: result.outputText,
+        stage: deriveStageFromState(state),
+      },
+      timestamp,
+    );
+  } catch (error) {
+    console.warn("BookSmart OpenAI answer layer failed, falling back to deterministic knowledge.", error);
+    return undefined;
+  }
+}
+
 function mergeState(
   current: ChatSessionState | undefined,
   sessionId: string,
@@ -1128,6 +1218,10 @@ function inferPreferredWindow(text: string): "morning" | "afternoon" | undefined
     return "afternoon";
   }
   return undefined;
+}
+
+function looksLikeAddressInput(text: string): boolean {
+  return /\b\d{1,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,4}\b/i.test(text.trim());
 }
 
 function capitalize(value: string): string {
@@ -1562,6 +1656,29 @@ function buildOpenAiInput(
   });
 }
 
+function buildOpenAiAnswerLayerInput(
+  state: ChatSessionState,
+  latestMessage: string,
+  config: AppConfig,
+): string {
+  const transcript = state.transcript.slice(-8).map((entry) => ({
+    direction: entry.direction,
+    text: entry.text,
+  }));
+
+  return JSON.stringify({
+    latestCustomerMessage: latestMessage,
+    stage: state.stage,
+    bookingStatus: state.bookingStatus,
+    missingFields: listMissingFields(state),
+    customer: state.customer,
+    nextBookingPrompt: buildNextBookingPrompt(state),
+    fallbackUnknownAnswer: fallbackForUnhandledQuestion(config),
+    approvedKnowledge: buildBookSmartAnswerLayerKnowledgeContext(),
+    transcript,
+  });
+}
+
 function deriveStageFromState(state: ChatSessionState): ChatStage {
   if (state.bookingStatus === "booked") {
     return "booked";
@@ -1774,6 +1891,46 @@ function summarizeOpenAiDecisionTrace(toolCalls: string[]): string {
   return `OpenAI used tools: ${toolCalls.join(", ")}.`;
 }
 
+function shouldUseOpenAiAnswerLayer(
+  config: AppConfig,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  state: ChatSessionState,
+  messageText: string,
+): boolean {
+  if (!config.openai.enabled || !config.openai.apiKey) {
+    return false;
+  }
+
+  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+    return false;
+  }
+
+  if (detectUrgency(messageText, bookSmartConfig).urgent) {
+    return false;
+  }
+
+  if (!looksLikeOpenAiAnswerLayerMessage(messageText)) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldUseOpenAiStructuredFlow(
+  state: ChatSessionState,
+  messageText: string,
+): boolean {
+  return (
+    state.stage === "collect_preferred_window" ||
+    state.stage === "offer_slots" ||
+    Boolean(extractEmailAddress(messageText)) ||
+    Boolean(extractPhoneNumber(messageText)) ||
+    Boolean(looksLikeAddressInput(messageText)) ||
+    Boolean(extractZipCode(messageText)) ||
+    Boolean(inferPreferredWindow(messageText))
+  );
+}
+
 function withHumanHandoffContact(replyText: string, config: AppConfig): string {
   const phone = config.contact.humanHandoffPhone;
   if (!phone) {
@@ -1826,6 +1983,15 @@ function fallbackForUnhandledQuestion(config: AppConfig): string {
   }
 
   return "not totally sure on that one over text.";
+}
+
+function looksLikeOpenAiAnswerLayerMessage(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    looksLikeKnowledgeQuestion(normalized) ||
+    /\b(talk to a person|call me|call instead|text instead|have some questions first|ask away)\b/.test(normalized) ||
+    /\b(i have some questions|can i ask|before i book|before i schedule)\b/.test(normalized)
+  );
 }
 
 function isGreetingOnly(text: string): boolean {

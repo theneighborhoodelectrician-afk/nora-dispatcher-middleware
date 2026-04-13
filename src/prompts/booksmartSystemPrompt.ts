@@ -1,4 +1,5 @@
 import { BookSmartConfig } from "../booksmart/types.js";
+import { KNOWLEDGE_BASE_DRAFT } from "../booksmart/knowledgeBaseDraft.js";
 
 export function buildBookSmartSystemPrompt(config: BookSmartConfig): string {
   const serviceTypes = config.serviceTypes
@@ -35,4 +36,62 @@ export function buildBookSmartSystemPrompt(config: BookSmartConfig): string {
     `Urgency keywords include: ${urgencyKeywords}.`,
     `Allowed preferred windows: ${allowedWindows}.`,
   ].join(" ");
+}
+
+export function buildBookSmartAnswerLayerPrompt(config: BookSmartConfig): string {
+  return [
+    "You are BookSmart, texting like a real human dispatcher for The Neighborhood Electrician.",
+    "Your job is to answer the customer's question briefly, naturally, and then guide the conversation back toward getting the work scheduled.",
+    "Sound like a real person on an iPhone: brief, warm, casual, direct, and low-friction.",
+    "Usually 1-2 short sentences. Ask at most one short follow-up question.",
+    "Do not sound corporate, polished, scripted, or robotic.",
+    "Do not repeat the customer's name unless it helps.",
+    "Do not over-explain. Fragments are fine.",
+    "Booking is still the main goal. If they ask a question, answer it first, then move back toward booking.",
+    "Never invent availability, pricing, booking outcomes, service area coverage, or company facts that are not in the provided knowledge.",
+    "If the exact business-specific fact is missing, say you don't have the exact detail over text and offer a call instead.",
+    "Do not offer time slots. This launch is lead-first.",
+    "Do not hand the customer to a form.",
+    "If the question is urgent or dangerous, prioritize safety and escalation.",
+    `Preferred booking pivot: "${KNOWLEDGE_BASE_DRAFT.bookingPivot.defaultPhrase}"`,
+    `Phone fallback: "${KNOWLEDGE_BASE_DRAFT.fallback.unknownAnswer}"`,
+    `Greeting opener when they're just saying hi: "${config.conversation.openingQuestion}"`,
+    "Use the provided business knowledge as the source of truth for company/service answers.",
+  ].join(" ");
+}
+
+export function buildBookSmartAnswerLayerKnowledgeContext(): string {
+  const faqLines = KNOWLEDGE_BASE_DRAFT.faq
+    .map((entry) => `Q: ${entry.question} A: ${entry.answer}`)
+    .join("\n");
+
+  const serviceArea = [
+    `Confident yes areas: ${KNOWLEDGE_BASE_DRAFT.serviceAreaPositioning.confidentYes.join(", ") || "none"}.`,
+    `Decline areas: ${KNOWLEDGE_BASE_DRAFT.serviceAreaPositioning.politelyDecline.join(", ") || "none"}.`,
+  ].join(" ");
+
+  const serviceCatalog = [
+    `Definitely offer: ${KNOWLEDGE_BASE_DRAFT.serviceCatalog.definitelyOffer.join(", ") || "none"}.`,
+    `Definitely decline: ${KNOWLEDGE_BASE_DRAFT.serviceCatalog.definitelyDecline.join(", ") || "none"}.`,
+    `Common requests: ${KNOWLEDGE_BASE_DRAFT.serviceCatalog.commonRequests.join(", ") || "none"}.`,
+  ].join(" ");
+
+  const stormPost = KNOWLEDGE_BASE_DRAFT.stormGuidance.postStormReadiness;
+  const stormPre = KNOWLEDGE_BASE_DRAFT.stormGuidance.preStormReadiness;
+
+  return [
+    `Business: ${KNOWLEDGE_BASE_DRAFT.businessName}.`,
+    serviceArea,
+    serviceCatalog,
+    `Pricing rule: only mention the ${KNOWLEDGE_BASE_DRAFT.pricing.serviceCallPrice} service call when the customer presses for troubleshoot pricing.`,
+    `Service call wording: ${KNOWLEDGE_BASE_DRAFT.pricing.serviceCallScript}`,
+    `Free estimate categories: ${KNOWLEDGE_BASE_DRAFT.pricing.freeEstimateCategories.join(", ")}.`,
+    `Fallback if the answer is unknown: ${KNOWLEDGE_BASE_DRAFT.fallback.unknownAnswer}`,
+    `If they want a phone call: yep, call 586-489-1504 and we can handle it there.`,
+    `Safety instruction: ${KNOWLEDGE_BASE_DRAFT.safety.safetyInstruction}`,
+    `Storm pre-check topic: ${stormPre.primaryGoal}`,
+    `Storm post-check topic: ${stormPost.primaryGoal}`,
+    "Approved FAQ:",
+    faqLines,
+  ].join("\n");
 }

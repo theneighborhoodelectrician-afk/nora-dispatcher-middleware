@@ -11,7 +11,7 @@ export interface RunOpenAiResponsesOptions {
   model: string;
   systemPrompt: string;
   inputText: string;
-  tools: OpenAiFunctionTool[];
+  tools?: OpenAiFunctionTool[];
   maxToolRounds?: number;
 }
 
@@ -51,7 +51,7 @@ export async function runOpenAiResponses(
     model,
     systemPrompt,
     inputText,
-    tools,
+    tools = [],
     maxToolRounds = 4,
   } = options;
 
@@ -69,13 +69,17 @@ export async function runOpenAiResponses(
         content: [{ type: "input_text", text: inputText }],
       },
     ],
-    tools: tools.map((tool) => ({
-      type: "function",
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    })),
-    tool_choice: "auto",
+    ...(tools.length
+      ? {
+          tools: tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          })),
+          tool_choice: "auto",
+        }
+      : {}),
   });
 
   let rounds = 0;
@@ -149,13 +153,17 @@ export async function runOpenAiResponses(
       model,
       previous_response_id: response.id,
       input: outputs,
-      tools: tools.map((tool) => ({
-        type: "function",
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      })),
-      tool_choice: "auto",
+      ...(tools.length
+        ? {
+            tools: tools.map((tool) => ({
+              type: "function",
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            })),
+            tool_choice: "auto",
+          }
+        : {}),
     });
     rounds += 1;
   }

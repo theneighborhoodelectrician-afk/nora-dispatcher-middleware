@@ -446,7 +446,7 @@ describe("BookSmart chat flow", () => {
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
   });
 
-  it("can use the OpenAI runtime path to store structured fields before asking the next question", async () => {
+  it("uses the OpenAI answer layer for broader customer questions while keeping booking in control", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
@@ -458,31 +458,46 @@ describe("BookSmart chat flow", () => {
       },
     };
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: "resp_city_1",
-          output: [
-            {
-              type: "function_call",
-              call_id: "call_city_1",
-              name: "update_conversation_state",
-              arguments: JSON.stringify({ city: "Sterling Heights" }),
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: "resp_city_2",
-          output_text: "What kind of electrical project do you need help with?",
-        }),
-      });
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: "resp_answer_1",
+        output_text: "not sure on the exact number over text. want to get it scheduled?",
+      }),
+    });
 
     vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-answer-layer",
+        text: "How long have you guys been in business?",
+        contact: {
+          phone: "555-111-4545",
+        },
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.stage).toBe("collect_city");
+    expect(reply.replyText.toLowerCase()).toContain("want to get it scheduled");
+
+    const messages = await storage.listConversationMessages("booksmart-ai-answer-layer");
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "openai_answer_layer")).toBe(true);
+  });
+
+  it("keeps simple structured intake deterministic even when OpenAI is enabled", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
 
     const reply = await handleChatMessage(
       {
@@ -494,7 +509,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText).toContain("What kind of electrical project");
+    expect(reply.replyText.toLowerCase()).toContain("what’s up?");
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-city");
     expect(storedSession?.payload.customer.city).toBe("Sterling Heights");
@@ -503,9 +518,7 @@ describe("BookSmart chat flow", () => {
     expect(stages.some((stage) => stage.stage === "city_collected")).toBe(true);
 
     const messages = await storage.listConversationMessages("booksmart-ai-city");
-    expect(
-      messages.some((message) => message.direction === "tool" && message.toolName === "update_conversation_state"),
-    ).toBe(true);
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "update_conversation_state")).toBe(false);
   });
 
   it("ignores legacy offered-slot state and still submits a lead in launch mode", async () => {
