@@ -212,6 +212,36 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).not.toContain("city?");
   });
 
+  it("does not treat an unknown question like the city while waiting on city", async () => {
+    const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-question-not-city";
+
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "hello",
+        contact: {
+          phone: "555-111-5858",
+        },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "How long have you guys been in business?",
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_service_type");
+    expect(reply.replyText.toLowerCase()).toContain("not totally sure on that one over text");
+    expect(reply.replyText.toLowerCase()).not.toContain("need to check that area first");
+  });
+
   it("handles a storm-related question briefly and then moves back toward scheduling", async () => {
     const storage = new MemoryStorageAdapter();
 

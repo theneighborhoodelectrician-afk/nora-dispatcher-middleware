@@ -310,6 +310,15 @@ export async function handleChatMessage(
   }
 
   if (state.stage === "collect_city" && state.transcript.length > 1) {
+    if (looksLikeKnowledgeQuestion(messageText)) {
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: fallbackForUnhandledQuestion(config),
+        stage: state.stage,
+      }, now);
+    }
+
     state.customer.city = messageText;
     await recordStageOnce(storage, state, "city_collected", now, {
       city: state.customer.city,
@@ -387,6 +396,15 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: "got you. what’s going on?",
+          stage: state.stage,
+        }, now);
+      }
+
+      if (looksLikeKnowledgeQuestion(messageText)) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: fallbackForUnhandledQuestion(config),
           stage: state.stage,
         }, now);
       }
@@ -1799,6 +1817,15 @@ function askForEmail(state: ChatSessionState): string {
 
 function askForPreferredWindow(state: ChatSessionState): string {
   return personalizeReply(state, "morning or afternoon?");
+}
+
+function fallbackForUnhandledQuestion(config: AppConfig): string {
+  const phone = config.contact.humanHandoffPhone;
+  if (phone) {
+    return `not totally sure on that one over text. if you want, call ${phone} and we can handle it there.`;
+  }
+
+  return "not totally sure on that one over text.";
 }
 
 function isGreetingOnly(text: string): boolean {
