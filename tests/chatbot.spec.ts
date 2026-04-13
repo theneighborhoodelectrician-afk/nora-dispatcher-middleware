@@ -75,6 +75,25 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText).toContain("what’s up?");
   });
 
+  it("asks a natural follow-up when the customer only gives a vague request", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-vague-help-request",
+        text: "I'd like to get an electrician over to the job",
+        contact: {
+          phone: "555-111-2323",
+        },
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_service_type");
+    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
+  });
+
   it("answers a common question briefly and then pivots back to booking", async () => {
     const storage = new MemoryStorageAdapter();
 
@@ -151,8 +170,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(restartReply.stage).toBe("collect_city");
-    expect(restartReply.replyText.toLowerCase()).toContain("city?");
+    expect(restartReply.stage).toBe("collect_service_type");
+    expect(restartReply.replyText.toLowerCase()).toContain("what’s going on?");
     expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
   });
 

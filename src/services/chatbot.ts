@@ -368,6 +368,16 @@ export async function handleChatMessage(
       }, now);
     }
 
+    if (state.transcript.length <= 2 && isGenericHelpRequest(messageText)) {
+      state.stage = "collect_service_type";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "got you. what’s going on?",
+        stage: state.stage,
+      }, now);
+    }
+
     if (state.transcript.length <= 2) {
       setServiceDetails(state, messageText, bookSmartConfig);
       await recordStageOnce(storage, state, "service_identified", now, {
@@ -1710,6 +1720,15 @@ function askForPreferredWindow(state: ChatSessionState): string {
 function isGreetingOnly(text: string): boolean {
   return /^(hi|hi there|hey|hey there|hello|hello there|yo|good morning|good afternoon|good evening|sup|what'?s up)\b[!. ]*$/i.test(
     text.trim(),
+  );
+}
+
+function isGenericHelpRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    /\b(i need|need|looking for|want|would like|i'?d like|need help|help with)\b/.test(normalized) &&
+    /\b(electrician|electrical|electric|someone out|service)\b/.test(normalized) &&
+    !/\b(panel|breaker|outlet|switch|lights?|lighting|recessed|charger|ev|generator|interlock|fan|fixture|smoke|co detector|surge|subpanel|rewire|remodel|mast|meter|burning|sparks?|arcing|hot panel)\b/.test(normalized)
   );
 }
 
