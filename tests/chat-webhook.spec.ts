@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import handler from "../api/webhooks/chat.js";
 import { getConfig } from "../src/config.js";
 import { getStorageAdapter } from "../src/storage/index.js";
+import crypto from "node:crypto";
 
 function createResponseRecorder() {
   const response = {
@@ -347,5 +348,52 @@ describe("chat webhook", () => {
       ignored: true,
       event: "message.read",
     });
+  });
+
+  it("accepts Blooio status events signed with x-blooio-signature", async () => {
+    const originalSecret = process.env.BLOOIO_WEBHOOK_SECRET;
+    process.env.BLOOIO_WEBHOOK_SECRET = "whsec_launch_override";
+    const body = {
+      event: "message.read",
+      status: "read",
+      message_id: "blo-status-signed-1",
+      external_id: "+15865310369",
+      protocol: "rcs",
+      timestamp: 1776022368997,
+      internal_id: "+12488475527",
+      is_group: false,
+      text: "morning or afternoon?",
+      read_at: 1776022368005,
+    };
+    const signature = crypto
+      .createHmac("sha256", process.env.BLOOIO_WEBHOOK_SECRET)
+      .update(JSON.stringify(body))
+      .digest("hex");
+
+    try {
+      const req = {
+        method: "POST",
+        headers: {
+          "x-blooio-signature": `t=1776022368,v1=${signature}`,
+        },
+        body,
+      };
+
+      const res = createResponseRecorder();
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({
+        success: true,
+        ignored: true,
+        event: "message.read",
+      });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.BLOOIO_WEBHOOK_SECRET;
+      } else {
+        process.env.BLOOIO_WEBHOOK_SECRET = originalSecret;
+      }
+    }
   });
 });

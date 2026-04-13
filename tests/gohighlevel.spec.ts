@@ -18,6 +18,17 @@ describe("GoHighLevel webhook auth", () => {
     ).toBe(true);
   });
 
+  it("accepts a Blooio-style v1 signature header", () => {
+    const signature = crypto.createHmac("sha256", secret).update(body).digest("hex");
+    expect(
+      verifyWebhookAuth({
+        rawBody: body,
+        providedSignature: `t=1776022368,v1=${signature}`,
+        secret,
+      }),
+    ).toBe(true);
+  });
+
   it("accepts a direct shared secret header", () => {
     expect(
       verifyWebhookAuth({

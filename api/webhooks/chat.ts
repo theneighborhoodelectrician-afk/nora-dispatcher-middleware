@@ -17,7 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   await prepareStorage(config);
   const storage = getStorageAdapter(config);
   const rawBody = JSON.stringify(req.body ?? {});
-  const providedSignature = req.headers["x-nora-signature"];
+  const providedSignature =
+    req.headers["x-nora-signature"] ??
+    req.headers["x-blooio-signature"];
   const providedSecret =
     req.headers["x-nora-chat-secret"] ??
     req.headers["x-blooio-secret"] ??
