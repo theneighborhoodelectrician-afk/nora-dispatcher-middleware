@@ -72,7 +72,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText).toContain("what’s up?");
+    expect(reply.replyText.toLowerCase()).toContain("how can i help");
   });
 
   it("asks a natural follow-up when the customer only gives a vague request", async () => {
@@ -121,7 +121,7 @@ describe("BookSmart chat flow", () => {
 
     expect(firstReply.stage).toBe("collect_service_type");
     expect(secondReply.stage).toBe("collect_service_type");
-    expect(secondReply.replyText.toLowerCase()).toContain("what’s up?");
+    expect(secondReply.replyText.toLowerCase()).toContain("how can i help");
   });
 
   it("does not treat repeated greetings as the city", async () => {
@@ -168,9 +168,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_city");
+    expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("macomb and oakland county");
-    expect(reply.replyText.toLowerCase()).toContain("city?");
+    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
   });
 
   it("lets the customer ask questions first without forcing intake immediately", async () => {
@@ -188,7 +188,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_city");
+    expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("ask away");
     expect(reply.replyText.toLowerCase()).not.toContain("city?");
   });
@@ -257,9 +257,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_city");
+    expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("mast");
-    expect(reply.replyText.toLowerCase()).toContain("city?");
+    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
   });
 
   it("starts a fresh intake after a completed lead instead of reusing the closed session", async () => {
@@ -480,7 +480,7 @@ describe("BookSmart chat flow", () => {
       aiConfig,
     );
 
-    expect(reply.stage).toBe("collect_city");
+    expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("want to get it scheduled");
 
     const messages = await storage.listConversationMessages("booksmart-ai-answer-layer");
@@ -509,7 +509,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText.toLowerCase()).toContain("what’s up?");
+    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-city");
     expect(storedSession?.payload.customer.city).toBe("Sterling Heights");

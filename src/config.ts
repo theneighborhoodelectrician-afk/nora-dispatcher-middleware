@@ -95,7 +95,7 @@ export function getConfig(): AppConfig {
       apiKey: process.env.OPENAI_API_KEY,
       baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
       model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      enabled: readBoolean("OPENAI_RESPONSES_ENABLED", Boolean(process.env.OPENAI_API_KEY)),
+      enabled: readBoolean("OPENAI_RESPONSES_ENABLED", false),
     },
     hcp: {
       baseUrl: process.env.HCP_API_BASE_URL ?? "https://api.housecallpro.com",

@@ -299,7 +299,7 @@ export const DEFAULT_BOOKSMART_CONFIG: BookSmartConfig = {
     allowedWindows: ["morning", "afternoon"],
   },
   conversation: {
-    openingQuestion: "hey - what’s up?",
+    openingQuestion: "hey - how can i help?",
     afterHoursBehavior: "continue",
     requestPhotosFor: ["estimate"],
     handoffMessage: "I’m looping in our team so they can help you right away.",

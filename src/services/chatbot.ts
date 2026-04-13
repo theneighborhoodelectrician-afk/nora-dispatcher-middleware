@@ -131,6 +131,7 @@ export async function handleChatMessage(
       state.stage = deriveStageFromState(state);
     }
   }
+  state.stage = deriveStageFromState(state);
   const photoReceivedThisTurn = inferPhotoSent(normalized);
   state.analytics.photoSent = state.analytics.photoSent || photoReceivedThisTurn;
   const bookSmartConfig = await loadBookSmartConfig(storage);
@@ -1006,7 +1007,7 @@ function mergeState(
 
   const next: ChatSessionState = baseState ?? {
     sessionId,
-    stage: "collect_city",
+    stage: "collect_service_type",
     customer: {},
     bookingStatus: "collecting",
     transcript: [],
@@ -1684,12 +1685,12 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "offer_slots";
   }
 
-  if (!state.customer.city) {
-    return "collect_city";
-  }
-
   if (!state.customer.requestedService) {
     return "collect_service_type";
+  }
+
+  if (!state.customer.city) {
+    return "collect_city";
   }
 
   if (!state.customer.address) {
@@ -1721,11 +1722,11 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
 
 function listMissingFields(state: ChatSessionState): string[] {
   const missing: string[] = [];
-  if (!state.customer.city) {
-    missing.push("city");
-  }
   if (!state.customer.requestedService) {
     missing.push("service_type");
+  }
+  if (!state.customer.city) {
+    missing.push("city");
   }
   if (!state.customer.address) {
     missing.push("address");
@@ -1962,7 +1963,7 @@ function personalizeReply(state: ChatSessionState, message: string): string {
 }
 
 function askForServiceType(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s up?");
+  return personalizeReply(state, "what’s going on?");
 }
 
 function askForCity(state: ChatSessionState): string {
@@ -2125,11 +2126,11 @@ function looksLikeKnowledgeQuestion(text: string): boolean {
 }
 
 function buildNextBookingPrompt(state: ChatSessionState): string {
+  if (!state.customer.requestedService) {
+    return askForServiceType(state);
+  }
   if (!state.customer.city) {
     return askForCity(state);
-  }
-  if (!state.customer.requestedService) {
-    return buildKnowledgePivot();
   }
   if (!state.customer.address) {
     return askForAddress(state);

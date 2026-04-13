@@ -86,7 +86,7 @@ Current assumptions:
 
 BookSmart now has an optional OpenAI Responses runtime path layered on top of the existing typed tools.
 
-- It is off unless `OPENAI_RESPONSES_ENABLED=true` or an `OPENAI_API_KEY` is present
+- It is off by default and only turns on when `OPENAI_RESPONSES_ENABLED=true`
 - It uses the existing typed BookSmart tools for service area checks, service classification, lead creation, photo requests, and human handoff
 - If the OpenAI request fails, chat falls back to the existing deterministic flow
 - Housecall Pro remains the source of truth for lead and booking writes
