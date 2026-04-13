@@ -41,6 +41,6 @@ describe("public chat api", () => {
     const payload = JSON.parse(res.body);
     expect(payload.success).toBe(true);
     expect(payload.sessionId).toBe("public-chat-1");
-    expect(payload.replyText.toLowerCase()).toContain("how can i help");
+    expect(payload.replyText.toLowerCase()).toContain("how are you today");
   });
 });

@@ -72,7 +72,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText.toLowerCase()).toContain("how can i help");
+    expect(reply.replyText.toLowerCase()).toContain("how are you today");
   });
 
   it("asks a natural follow-up when the customer only gives a vague request", async () => {
@@ -121,7 +121,7 @@ describe("BookSmart chat flow", () => {
 
     expect(firstReply.stage).toBe("collect_service_type");
     expect(secondReply.stage).toBe("collect_service_type");
-    expect(secondReply.replyText.toLowerCase()).toContain("how can i help");
+    expect(secondReply.replyText.toLowerCase()).toContain("how are you today");
   });
 
   it("does not treat repeated greetings as the city", async () => {
