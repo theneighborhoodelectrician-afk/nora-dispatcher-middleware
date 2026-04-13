@@ -1909,7 +1909,11 @@ function shouldUseOpenAiAnswerLayer(
     return false;
   }
 
-  if (!looksLikeOpenAiAnswerLayerMessage(messageText)) {
+  if (looksLikeStructuredReplyForCurrentStage(state, messageText, bookSmartConfig)) {
+    return false;
+  }
+
+  if (!looksLikeOpenAiAnswerLayerMessage(state, messageText, bookSmartConfig)) {
     return false;
   }
 
@@ -1985,13 +1989,68 @@ function fallbackForUnhandledQuestion(config: AppConfig): string {
   return "not totally sure on that one over text.";
 }
 
-function looksLikeOpenAiAnswerLayerMessage(text: string): boolean {
+function looksLikeOpenAiAnswerLayerMessage(
+  state: ChatSessionState,
+  text: string,
+  config: typeof DEFAULT_BOOKSMART_CONFIG,
+): boolean {
   const normalized = text.trim().toLowerCase();
   return (
+    isGreetingOnly(normalized) ||
+    isGenericHelpRequest(normalized) ||
     looksLikeKnowledgeQuestion(normalized) ||
+    (!state.customer.requestedService && !classifyServiceType(normalized, config).matched) ||
     /\b(talk to a person|call me|call instead|text instead|have some questions first|ask away)\b/.test(normalized) ||
     /\b(i have some questions|can i ask|before i book|before i schedule)\b/.test(normalized)
   );
+}
+
+function looksLikeStructuredReplyForCurrentStage(
+  state: ChatSessionState,
+  text: string,
+  config: typeof DEFAULT_BOOKSMART_CONFIG,
+): boolean {
+  switch (deriveStageFromState(state)) {
+    case "collect_city":
+      return Boolean(inferCityReply(text, config));
+    case "collect_service_type":
+      return classifyServiceType(text, config).matched;
+    case "collect_address":
+      return looksLikeAddressInput(text);
+    case "collect_zip":
+      return Boolean(extractZipCode(text));
+    case "collect_name":
+      return looksLikeNameInput(text);
+    case "collect_phone":
+      return Boolean(extractPhoneNumber(text));
+    case "collect_email":
+      return Boolean(extractEmailAddress(text) || wantsToSkipEmail(text));
+    case "collect_preferred_window":
+      return Boolean(inferPreferredWindow(text));
+    default:
+      return false;
+  }
+}
+
+function looksLikeNameInput(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    normalized.includes("?") ||
+    Boolean(extractEmailAddress(normalized)) ||
+    Boolean(extractPhoneNumber(normalized)) ||
+    Boolean(extractZipCode(normalized)) ||
+    looksLikeAddressInput(normalized)
+  ) {
+    return false;
+  }
+
+  const cleaned = normalized.replace(/[^a-zA-Z\s'-]/g, " ").trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 3 && words.every((word) => /^[a-zA-Z'-]+$/.test(word));
 }
 
 function isGreetingOnly(text: string): boolean {
