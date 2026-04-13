@@ -150,32 +150,7 @@ export async function handleChatMessage(
     },
   });
 
-  const openAiAnswerReply = await maybeHandleOpenAiAnswerLayer(
-    storage,
-    config,
-    bookSmartConfig,
-    state,
-    messageText,
-    sessionId,
-    now,
-  );
-  if (openAiAnswerReply) {
-    return openAiAnswerReply;
-  }
-
-  const knowledgeReply = await maybeHandleKnowledgeReply(
-    storage,
-    state,
-    messageText,
-    bookSmartConfig,
-    sessionId,
-    now,
-  );
-  if (knowledgeReply) {
-    return persistReply(storage, state, knowledgeReply, now);
-  }
-
-  const shouldUseOpenAi = config.openai.enabled && config.openai.apiKey && shouldUseOpenAiStructuredFlow(state, messageText);
+  const shouldUseOpenAi = shouldUseOpenAiConversationFlow(config, bookSmartConfig, state, messageText);
 
   if (shouldUseOpenAi) {
     const aiReply = await tryHandleChatMessageWithOpenAi(
@@ -190,6 +165,18 @@ export async function handleChatMessage(
     if (aiReply) {
       return aiReply;
     }
+  }
+
+  const knowledgeReply = await maybeHandleKnowledgeReply(
+    storage,
+    state,
+    messageText,
+    bookSmartConfig,
+    sessionId,
+    now,
+  );
+  if (knowledgeReply) {
+    return persistReply(storage, state, knowledgeReply, now);
   }
 
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
@@ -1647,6 +1634,7 @@ function buildOpenAiInput(
     urgency: state.urgency ?? "normal",
     availableSlots,
     transcript,
+    approvedKnowledge: buildBookSmartAnswerLayerKnowledgeContext(),
     bookingRules: config.bookingRules,
     conversationSettings: {
       openingQuestion: config.conversation.openingQuestion,
@@ -1914,6 +1902,31 @@ function shouldUseOpenAiAnswerLayer(
   }
 
   if (!looksLikeOpenAiAnswerLayerMessage(state, messageText, bookSmartConfig)) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldUseOpenAiConversationFlow(
+  config: AppConfig,
+  bookSmartConfig: typeof DEFAULT_BOOKSMART_CONFIG,
+  state: ChatSessionState,
+  messageText: string,
+): boolean {
+  if (!config.openai.enabled || !config.openai.apiKey) {
+    return false;
+  }
+
+  if (state.bookingStatus === "lead_submitted" || state.bookingStatus === "handoff") {
+    return false;
+  }
+
+  if (detectUrgency(messageText, bookSmartConfig).urgent) {
+    return false;
+  }
+
+  if (looksLikeStructuredReplyForCurrentStage(state, messageText, bookSmartConfig)) {
     return false;
   }
 

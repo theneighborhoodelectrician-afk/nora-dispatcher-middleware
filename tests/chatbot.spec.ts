@@ -446,7 +446,7 @@ describe("BookSmart chat flow", () => {
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
   });
 
-  it("uses the OpenAI answer layer for broader customer questions while keeping booking in control", async () => {
+  it("uses the OpenAI conversation path for broader customer questions while keeping booking in control", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
@@ -484,7 +484,7 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toContain("want to get it scheduled");
 
     const messages = await storage.listConversationMessages("booksmart-ai-answer-layer");
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "openai_answer_layer")).toBe(true);
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "openai_decision_trace")).toBe(true);
   });
 
   it("keeps simple structured intake deterministic even when OpenAI is enabled", async () => {
