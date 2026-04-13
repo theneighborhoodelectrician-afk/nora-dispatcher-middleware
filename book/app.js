@@ -304,7 +304,7 @@ function ensureSeededHistory() {
   saveHistory([
     {
       role: "assistant",
-      text: "What city is the project in?",
+      text: "hey - what’s up?",
       kind: "prompt",
     },
   ]);

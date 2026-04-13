@@ -300,6 +300,15 @@ export async function handleChatMessage(
     }, now);
   }
 
+  if (state.stage === "collect_city" && state.transcript.length > 2 && isGreetingOnly(messageText)) {
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: askForCity(state),
+      stage: state.stage,
+    }, now);
+  }
+
   if (state.stage === "collect_city" && state.transcript.length > 1) {
     state.customer.city = messageText;
     await recordStageOnce(storage, state, "city_collected", now, {
@@ -309,6 +318,79 @@ export async function handleChatMessage(
 
   if (!state.customer.city) {
     if (state.stage === "collect_service_type") {
+      if (isGreetingOnly(messageText)) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: bookSmartConfig.conversation.openingQuestion,
+          stage: state.stage,
+        }, now);
+      }
+
+      if (isGenericHelpRequest(messageText)) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: "got you. what’s going on?",
+          stage: state.stage,
+        }, now);
+      }
+
+      const cityCandidate = inferCityReply(messageText, bookSmartConfig);
+      if (cityCandidate) {
+        state.customer.city = cityCandidate;
+        await recordStageOnce(storage, state, "city_collected", now, {
+          city: state.customer.city,
+        });
+
+        const cityAreaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp: now,
+          toolName: "check_service_area",
+          toolCallSummary: `Checked service area for ${state.customer.city}.`,
+          metadata: {
+            ok: cityAreaDecision.ok,
+          },
+        });
+
+        if (!cityAreaDecision.ok) {
+          handoffToHuman("outside_service_area");
+          state.stage = "human_handoff";
+          state.bookingStatus = "handoff";
+          state.analytics.lastHandoffReason = "outside_service_area";
+          await storage.appendHandoffEvent({
+            conversationId: state.sessionId,
+            reason: "outside_service_area",
+            timestamp: now,
+            metadata: {
+              city: state.customer.city,
+            },
+          });
+          await recordStageOnce(storage, state, "escalated", now, {
+            reason: "outside_service_area",
+          });
+          return persistReply(storage, state, {
+            success: true,
+            sessionId,
+            replyText: withHumanHandoffContact(
+              personalizeReply(state, "got it. need to check that area first."),
+              config,
+            ),
+            stage: state.stage,
+            handoffRequired: true,
+          }, now);
+        }
+
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: "got you. what’s going on?",
+          stage: state.stage,
+        }, now);
+      }
+
       setServiceDetails(state, messageText, bookSmartConfig);
       await recordStageOnce(storage, state, "service_identified", now, {
         serviceTypeId: state.serviceTypeId,
@@ -1730,6 +1812,40 @@ function isGenericHelpRequest(text: string): boolean {
     /\b(electrician|electrical|electric|someone out|service)\b/.test(normalized) &&
     !/\b(panel|breaker|outlet|switch|lights?|lighting|recessed|charger|ev|generator|interlock|fan|fixture|smoke|co detector|surge|subpanel|rewire|remodel|mast|meter|burning|sparks?|arcing|hot panel)\b/.test(normalized)
   );
+}
+
+function inferCityReply(
+  text: string,
+  config: typeof DEFAULT_BOOKSMART_CONFIG,
+): string | undefined {
+  const normalized = text.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (
+    isGreetingOnly(normalized) ||
+    isGenericHelpRequest(normalized) ||
+    looksLikeKnowledgeQuestion(normalized) ||
+    classifyServiceType(normalized, config).matched
+  ) {
+    return undefined;
+  }
+
+  const cleaned = normalized.replace(/[^a-zA-Z\s'-]/g, " ").trim().toLowerCase();
+  if (!cleaned || cleaned.split(/\s+/).length > 3) {
+    return undefined;
+  }
+
+  return normalizeCityValue(cleaned);
+}
+
+function normalizeCityValue(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => capitalize(word))
+    .join(" ");
 }
 
 function looksLikeKnowledgeQuestion(text: string): boolean {

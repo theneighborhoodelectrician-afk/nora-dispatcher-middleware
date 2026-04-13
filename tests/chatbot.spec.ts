@@ -94,6 +94,65 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
   });
 
+  it("does not treat repeated greetings as the service description", async () => {
+    const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-repeated-greetings-service";
+
+    const firstReply = await handleChatMessage(
+      {
+        sessionId,
+        text: "hey",
+        contact: {
+          phone: "555-121-0001",
+        },
+      },
+      storage,
+      config,
+    );
+
+    const secondReply = await handleChatMessage(
+      {
+        sessionId,
+        text: "hey",
+      },
+      storage,
+      config,
+    );
+
+    expect(firstReply.stage).toBe("collect_service_type");
+    expect(secondReply.stage).toBe("collect_service_type");
+    expect(secondReply.replyText.toLowerCase()).toContain("what’s up?");
+  });
+
+  it("does not treat repeated greetings as the city", async () => {
+    const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-repeated-greetings-city";
+
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "need recessed lights",
+        contact: {
+          phone: "555-121-0002",
+        },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "hey",
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("collect_city");
+    expect(reply.replyText.toLowerCase()).toContain("city?");
+  });
+
   it("answers a common question briefly and then pivots back to booking", async () => {
     const storage = new MemoryStorageAdapter();
 
@@ -577,7 +636,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(secondReply.stage).toBe("collect_city");
+    expect(secondReply.stage).toBe("collect_service_type");
     expect(secondReply.handoffRequired).toBeUndefined();
 
     const thirdReply = await handleChatMessage(
@@ -589,7 +648,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(thirdReply.stage).toBe("collect_address");
+    expect(thirdReply.stage).toBe("collect_service_type");
     expect(thirdReply.handoffRequired).toBeUndefined();
   });
 
