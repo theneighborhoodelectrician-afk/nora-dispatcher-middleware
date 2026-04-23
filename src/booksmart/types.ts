@@ -6,6 +6,7 @@ export type BookSmartSkillTag =
   | "panel_work"
   | "ev_chargers"
   | "lighting"
+  | "recessed_lighting"
   | "remodel_estimates"
   | "generators"
   | "smart_home";
@@ -47,6 +48,10 @@ export interface ServiceTypeConfig {
   priorityLevel: number;
   classifierPhrases: string[];
   requestedServiceLabel: string;
+  /** How many named day blocks (Morning/Midday/Afternoon) the job needs; Jess can bump e.g. 7+ recessed lights to 2. */
+  durationSlots?: number;
+  consecutiveSlots?: boolean;
+  askCeilingHeight?: boolean;
 }
 
 export interface ServiceAreaConfig {

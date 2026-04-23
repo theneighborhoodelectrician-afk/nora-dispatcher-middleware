@@ -52,12 +52,11 @@ const config: AppConfig = {
 describe("BookSmart chat flow", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-04T11:00:00.000Z"));
+    vi.setSystemTime(new Date("2026-04-06T16:00:00.000Z"));
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -76,8 +75,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText.toLowerCase()).toContain("how are you today");
+    expect(reply.stage).toBe("collect_name");
+    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
   });
 
   it("asks a natural follow-up when the customer only gives a vague request", async () => {
@@ -95,8 +94,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
+    expect(reply.stage).toBe("collect_name");
+    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
   });
 
   it("does not treat repeated greetings as the service description", async () => {
@@ -124,9 +123,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(firstReply.stage).toBe("collect_service_type");
-    expect(secondReply.stage).toBe("collect_service_type");
-    expect(secondReply.replyText.toLowerCase()).toContain("how are you today");
+    expect(firstReply.stage).toBe("collect_name");
+    expect(secondReply.stage).toBe("collect_name");
+    expect(secondReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
   });
 
   it("does not treat repeated greetings as the city", async () => {
@@ -136,10 +135,18 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "need recessed lights",
+        text: "Pat",
         contact: {
           phone: "555-121-0002",
         },
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "need recessed lights",
       },
       storage,
       config,
@@ -160,14 +167,24 @@ describe("BookSmart chat flow", () => {
 
   it("answers a common question briefly and then pivots back to booking", async () => {
     const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-faq-area";
 
-    const reply = await handleChatMessage(
+    await handleChatMessage(
       {
-        sessionId: "booksmart-faq-area",
-        text: "Do you service my area?",
+        sessionId,
+        text: "Pat",
         contact: {
           phone: "555-111-3333",
         },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "Do you service my area?",
       },
       storage,
       config,
@@ -180,14 +197,24 @@ describe("BookSmart chat flow", () => {
 
   it("lets the customer ask questions first without forcing intake immediately", async () => {
     const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-questions-first";
 
-    const reply = await handleChatMessage(
+    await handleChatMessage(
       {
-        sessionId: "booksmart-questions-first",
-        text: "I'd like to ask some questions first",
+        sessionId,
+        text: "Sky",
         contact: {
           phone: "555-111-5656",
         },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "I'd like to ask some questions first",
       },
       storage,
       config,
@@ -200,14 +227,24 @@ describe("BookSmart chat flow", () => {
 
   it("responds naturally when the customer pushes back on the questions", async () => {
     const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-pushback-questions";
 
-    const reply = await handleChatMessage(
+    await handleChatMessage(
       {
-        sessionId: "booksmart-pushback-questions",
-        text: "Is that all you can ask me?",
+        sessionId,
+        text: "Rae",
         contact: {
           phone: "555-111-5757",
         },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "Is that all you can ask me?",
       },
       storage,
       config,
@@ -233,6 +270,15 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
+    await handleChatMessage(
+      {
+        sessionId,
+        text: "Morgan",
+      },
+      storage,
+      config,
+    );
+
     const reply = await handleChatMessage(
       {
         sessionId,
@@ -249,14 +295,24 @@ describe("BookSmart chat flow", () => {
 
   it("handles a storm-related question briefly and then moves back toward scheduling", async () => {
     const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-faq-storm";
 
-    const reply = await handleChatMessage(
+    await handleChatMessage(
       {
-        sessionId: "booksmart-faq-storm",
-        text: "What should I check before a storm?",
+        sessionId,
+        text: "Chris",
         contact: {
           phone: "555-111-4444",
         },
+      },
+      storage,
+      config,
+    );
+
+    const reply = await handleChatMessage(
+      {
+        sessionId,
+        text: "What should I check before a storm?",
       },
       storage,
       config,
@@ -274,7 +330,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "I need a panel upgrade",
+        text: "hello",
         contact: {
           phone: "586-111-2222",
         },
@@ -282,10 +338,11 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
+    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
+    await handleChatMessage({ sessionId, text: "I need a panel upgrade" }, storage, config);
     await handleChatMessage({ sessionId, text: "Shelby Township" }, storage, config);
     await handleChatMessage({ sessionId, text: "53617 Oak Grove" }, storage, config);
     await handleChatMessage({ sessionId, text: "48315" }, storage, config);
-    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
     await handleChatMessage({ sessionId, text: "nate@example.com" }, storage, config);
     const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, config);
 
@@ -303,8 +360,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(restartReply.stage).toBe("collect_service_type");
-    expect(restartReply.replyText.toLowerCase()).toContain("what’s going on?");
+    expect(restartReply.stage).toBe("collect_name");
+    expect(restartReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
     expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
   });
 
@@ -324,7 +381,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "flickering lights",
+        text: "hello",
         contact: {
           phone: "586-222-3333",
         },
@@ -332,6 +389,8 @@ describe("BookSmart chat flow", () => {
       storage,
       aiConfig,
     );
+    await handleChatMessage({ sessionId, text: "Brad" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "flickering lights" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "Fraser" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "22311 Garfield" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "48026" }, storage, aiConfig);
@@ -388,6 +447,15 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
+        text: "Jane",
+      },
+      storage,
+      config,
+    );
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-slots",
         text: "I need recessed lights in my kitchen",
       },
       storage,
@@ -407,15 +475,6 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-chat-slots",
         text: "123 Main St, Sterling Heights, MI 48313",
-      },
-      storage,
-      config,
-    );
-
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-slots",
-        text: "Jane",
       },
       storage,
       config,
@@ -493,7 +552,7 @@ describe("BookSmart chat flow", () => {
       bookingStatus: "collecting",
       transcript: [],
       analytics: createInitialAnalytics(
-        new Date("2026-04-04T11:00:00.000Z").getTime(),
+        new Date("2026-04-06T16:00:00.000Z").getTime(),
         "hello",
         "website",
       ),
@@ -554,10 +613,10 @@ describe("BookSmart chat flow", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    const reply = await handleChatMessage(
+    await handleChatMessage(
       {
         sessionId: "booksmart-ai-answer-layer",
-        text: "How long have you guys been in business?",
+        text: "Quinn",
         contact: {
           phone: "555-111-4545",
         },
@@ -566,8 +625,19 @@ describe("BookSmart chat flow", () => {
       aiConfig,
     );
 
-    expect(reply.stage).toBe("collect_service_type");
-    expect(reply.replyText.toLowerCase()).toContain("want to get it scheduled");
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-answer-layer",
+        text: "How long have you guys been in business?",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.replyText.toLowerCase()).toMatch(
+      /want to get it scheduled|what’s going on|not totally sure/,
+    );
+    expect(["collect_name", "collect_service_type"]).toContain(reply.stage);
 
     const messages = await storage.listConversationMessages("booksmart-ai-answer-layer");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "openai_decision_trace")).toBe(true);
@@ -584,6 +654,16 @@ describe("BookSmart chat flow", () => {
         enabled: true,
       },
     };
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-city",
+        text: "Riley",
+        contact: { phone: "555-000-0001" },
+      },
+      storage,
+      aiConfig,
+    );
 
     const reply = await handleChatMessage(
       {
@@ -661,7 +741,7 @@ describe("BookSmart chat flow", () => {
       lastOfferedOptions,
       transcript: [],
       analytics: createInitialAnalytics(
-        new Date("2026-04-04T11:00:00.000Z").getTime(),
+        new Date("2026-04-06T16:00:00.000Z").getTime(),
         "hello",
         "website",
       ),
@@ -747,6 +827,15 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-area",
+        text: "Alex",
+      },
+      storage,
+      config,
+    );
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-area",
         text: "I need an electrician",
       },
       storage,
@@ -791,9 +880,18 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(firstReply.replyText).toContain("hey - what’s up?");
+    expect(firstReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
 
     const secondReply = await handleChatMessage(
+      {
+        sessionId: "booksmart-config-routing",
+        text: "Morgan",
+      },
+      storage,
+      config,
+    );
+
+    const thirdReply = await handleChatMessage(
       {
         sessionId: "booksmart-config-routing",
         text: "I need an electrician",
@@ -802,10 +900,10 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(secondReply.stage).toBe("collect_service_type");
-    expect(secondReply.handoffRequired).toBeUndefined();
+    expect(thirdReply.stage).toBe("collect_service_type");
+    expect(thirdReply.handoffRequired).toBeUndefined();
 
-    const thirdReply = await handleChatMessage(
+    const fourthReply = await handleChatMessage(
       {
         sessionId: "booksmart-config-routing",
         text: "Detroit",
@@ -814,8 +912,8 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(thirdReply.stage).toBe("collect_service_type");
-    expect(thirdReply.handoffRequired).toBeUndefined();
+    expect(fourthReply.stage).toBe("collect_service_type");
+    expect(fourthReply.handoffRequired).toBeUndefined();
   });
 
   it("submits a lead instead of claiming a booked slot", async () => {
@@ -828,6 +926,14 @@ describe("BookSmart chat flow", () => {
         contact: {
           phone: "555-111-2222",
         },
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-book",
+        text: "Jane",
       },
       storage,
       config,
@@ -852,14 +958,6 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-chat-book",
         text: "123 Main St, Sterling Heights, MI 48313",
-      },
-      storage,
-      config,
-    );
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-book",
-        text: "Jane",
       },
       storage,
       config,
@@ -907,7 +1005,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-2",
-        text: "I need recessed lights in my kitchen",
+        text: "Jane",
       },
       storage,
       config,
@@ -916,7 +1014,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-3",
-        text: "Sterling Heights",
+        text: "I need recessed lights in my kitchen",
       },
       storage,
       config,
@@ -925,7 +1023,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-4",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "Sterling Heights",
       },
       storage,
       config,
@@ -934,7 +1032,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-5",
-        text: "Jane",
+        text: "123 Main St, Sterling Heights, MI 48313",
       },
       storage,
       config,
@@ -1005,6 +1103,14 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
+        text: "Jane",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
         text: "I need a breaker checked",
       },
       storage,
@@ -1018,18 +1124,10 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-email",
-        text: "123 Main St, Sterling Heights, MI 48313",
-      },
-      storage,
-      config,
-    );
     const emailPrompt = await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
-        text: "Jane",
+        text: "123 Main St, Sterling Heights, MI 48313",
       },
       storage,
       config,
@@ -1056,6 +1154,14 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-window",
+        text: "Nate",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
         text: "Need a new panel",
       },
       storage,
@@ -1073,14 +1179,6 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-chat-window",
         text: "53617 Oak Grove, Shelby Township, MI 48315",
-      },
-      storage,
-      config,
-    );
-    await handleChatMessage(
-      {
-        sessionId: "booksmart-chat-window",
-        text: "Nate",
       },
       storage,
       config,

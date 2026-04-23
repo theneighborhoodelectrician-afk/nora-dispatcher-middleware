@@ -46,7 +46,9 @@ describe("public runtime api", () => {
       expect(typeof payload.openAiEnabled).toBe("boolean");
       expect(typeof payload.adminProtected).toBe("boolean");
       expect(payload.humanHandoffPhone).toBe("586-489-1504");
-      expect(payload.humanHandoffHref).toBe("tel:+15864891504");
+      expect(payload.humanHandoffHref).toBe("sms:+15864891504");
+      expect(payload.humanHandoffCallHref).toBe("tel:+15864891504");
+      expect(payload.humanHandoffSmsHref).toBe("sms:+15864891504");
     } finally {
       if (originalPhone === undefined) {
         delete process.env.HUMAN_HANDOFF_PHONE;

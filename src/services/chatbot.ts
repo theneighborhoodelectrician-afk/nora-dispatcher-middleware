@@ -38,16 +38,18 @@ import {
   requestPhoto,
 } from "../tools/booksmart.js";
 import { OpenAiFunctionTool, runOpenAiResponses } from "./openaiResponses.js";
+import { lookupCustomerByPhone } from "../integrations/housecallPro.js";
 
 type ChatStage =
+  | "collect_name"
   | "collect_city"
   | "collect_service_type"
   | "collect_address"
   | "collect_zip"
-  | "collect_name"
   | "collect_phone"
   | "collect_email"
   | "collect_preferred_window"
+  | "confirm_returning_address"
   | "ready_for_availability"
   | "lead_submitted"
   | "offer_slots"
@@ -86,6 +88,14 @@ export interface ChatSessionState {
   lastOfferedOptions?: PresentedSlotOption[];
   transcript: ChatTranscriptEntry[];
   analytics: ChatAnalyticsState;
+  isReturningCustomer?: boolean;
+  hcpCustomerLookupTried?: boolean;
+  /** After we send the “still at this address?” greeting (returning). */
+  returningGreetingSent?: boolean;
+  /** Awaiting same-address yes / no. */
+  returningAddressAwaiting?: boolean;
+  /** HCP prefill: address is still good (yes). */
+  returningAddressConfirmed?: boolean;
 }
 
 export interface ChatReplyPayload {
@@ -122,8 +132,37 @@ export async function handleChatMessage(
 
   const now = Date.now();
   const leadSource = normalizeLeadSource(normalized.leadSource);
+  const phoneForLookup = normalized.customer?.phone ?? normalized.contact?.phone;
+  const hcpLookup = phoneForLookup
+    ? await lookupCustomerByPhone(phoneForLookup, config.hcp)
+    : { found: false as const };
+
   const existing = await storage.getChatSession<ChatSessionState>(sessionId);
+  const isBrandNewSession = !existing?.payload;
   const state = mergeState(existing?.payload, sessionId, normalized, messageText, now, leadSource);
+
+  if (hcpLookup?.found && isBrandNewSession) {
+    state.hcpCustomerLookupTried = true;
+    state.isReturningCustomer = true;
+    if (hcpLookup.firstName) {
+      state.customer.firstName = hcpLookup.firstName;
+    }
+    if (hcpLookup.address) {
+      state.customer.address = hcpLookup.address;
+    }
+    if (hcpLookup.city) {
+      state.customer.city = hcpLookup.city;
+    }
+    if (hcpLookup.zipCode) {
+      state.customer.zipCode = hcpLookup.zipCode;
+    }
+    if (hcpLookup.email) {
+      state.customer.email = hcpLookup.email;
+    }
+    state.returningAddressAwaiting = true;
+    state.stage = "confirm_returning_address";
+  }
+
   if (isLeadOnlyLaunch(config)) {
     state.lastOfferedOptions = undefined;
     if (state.bookingStatus === "offered") {
@@ -152,6 +191,109 @@ export async function handleChatMessage(
       messageId: normalized.messageId,
     },
   });
+
+  if (state.stage === "confirm_returning_address" && state.isReturningCustomer) {
+    if (!state.returningGreetingSent) {
+      state.returningGreetingSent = true;
+      state.stage = "confirm_returning_address";
+      const first = state.customer.firstName ?? "there";
+      const addr = state.customer.address ?? "this address";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: `Hey ${first}! Great to hear from you. Are you still at ${addr}?`,
+        stage: "confirm_returning_address",
+      }, now);
+    }
+    if (isAffirmativeReply(messageText)) {
+      state.returningAddressConfirmed = true;
+      state.returningAddressAwaiting = false;
+      state.stage = "collect_service_type";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "Perfect—what’s going on with the electrical today?",
+        stage: state.stage,
+      }, now);
+    }
+    if (isNegativeReply(messageText)) {
+      state.customer.address = undefined;
+      state.customer.city = undefined;
+      state.customer.zipCode = undefined;
+      state.returningAddressAwaiting = false;
+      state.returningAddressConfirmed = false;
+      state.stage = "collect_address";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "No problem—what’s the best street address and zip for this job?",
+        stage: "collect_address",
+      }, now);
+    }
+  }
+
+  if (state.stage === "collect_name" && !state.customer.firstName) {
+    if (isGreetingOnly(messageText) || isGenericHelpRequest(messageText)) {
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "hey—who am I speaking with? what’s your first name?",
+        stage: "collect_name",
+      }, now);
+    }
+    const urgentDuringName = detectUrgency(messageText, bookSmartConfig);
+    if (urgentDuringName.urgent) {
+      setServiceDetails(state, messageText, bookSmartConfig);
+      await recordStageOnce(storage, state, "service_identified", now, {
+        serviceTypeId: state.serviceTypeId,
+      });
+      if (state.urgency === "urgent") {
+        handoffToHuman("urgent");
+        state.stage = "human_handoff";
+        state.bookingStatus = "handoff";
+        state.analytics.lastHandoffReason = "urgent";
+        await persistUrgencyHits(storage, state, now);
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason: "urgent",
+          timestamp: now,
+          metadata: {
+            keywords: state.analytics.urgencyKeywordsDetected,
+          },
+        });
+        await recordMessage(storage, {
+          conversationId: state.sessionId,
+          direction: "tool",
+          timestamp: now,
+          toolName: "handoff_to_human",
+          toolCallSummary: `Escalating urgent request to a human.`,
+        });
+        await recordStageOnce(storage, state, "escalated", now, {
+          reason: "urgent",
+        });
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: withHumanHandoffContact(
+            personalizeReply(state, "that sounds urgent. pulling someone in now."),
+            config,
+          ),
+          stage: state.stage,
+          handoffRequired: true,
+        }, now);
+      }
+    }
+    const inferred = inferFirstName(messageText);
+    state.customer.firstName = inferred;
+    await recordStageOnce(storage, state, "contact_collected", now, { firstName: inferred });
+    state.stage = "collect_service_type";
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: "thanks—what’s going on with the electrical today?",
+      stage: "collect_service_type",
+    }, now);
+  }
 
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
     const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
@@ -739,13 +881,15 @@ export async function handleChatMessage(
         }, now);
       }
 
-      state.stage = "collect_name";
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: askForFirstName(state),
-        stage: state.stage,
-      }, now);
+      if (!state.customer.firstName) {
+        state.stage = "collect_name";
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForFirstName(state),
+          stage: state.stage,
+        }, now);
+      }
     } else {
       state.stage = "collect_address";
       return persistReply(storage, state, {
@@ -772,13 +916,15 @@ export async function handleChatMessage(
     await recordStageOnce(storage, state, "address_collected", now, {
       zipCode: zip,
     });
-    state.stage = "collect_name";
-    return persistReply(storage, state, {
-      success: true,
-      sessionId,
-      replyText: askForFirstName(state),
-      stage: state.stage,
-    }, now);
+    if (!state.customer.firstName) {
+      state.stage = "collect_name";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForFirstName(state),
+        stage: state.stage,
+      }, now);
+    }
   }
 
   if (!state.customer.firstName) {
@@ -1025,7 +1171,7 @@ function mergeState(
 
   const next: ChatSessionState = baseState ?? {
     sessionId,
-    stage: "collect_service_type",
+    stage: "collect_name",
     customer: {},
     bookingStatus: "collecting",
     transcript: [],
@@ -1110,6 +1256,8 @@ function toCustomerRequest(customer: Partial<CustomerRequest>): CustomerRequest 
     notes: customer.notes,
     sameDayRequested: customer.sameDayRequested,
     preferredWindow: customer.preferredWindow,
+    bookSmartQualifiers: customer.bookSmartQualifiers,
+    recessedSlotBlocks: customer.recessedSlotBlocks,
   };
 }
 
@@ -1119,6 +1267,7 @@ async function submitLeadFromState(
   config: AppConfig,
   sessionId: string,
   timestamp: number,
+  replyTextOverride?: string,
 ): Promise<ChatReplyPayload> {
   await recordMessage(storage, {
     conversationId: state.sessionId,
@@ -1155,7 +1304,7 @@ async function submitLeadFromState(
     {
       success: true,
       sessionId,
-      replyText: lead.presentation.replyText,
+      replyText: replyTextOverride ?? lead.presentation.replyText,
       stage: state.stage,
       leadId: lead.externalId,
     },
@@ -1666,6 +1815,17 @@ async function enforceBookSmartGuards(
       }, timestamp);
     }
 
+    if (availability.escalationReason === "after_hours_or_weekend" && availability.presentation?.replyText) {
+      return submitLeadFromState(
+        storage,
+        state,
+        config,
+        sessionId,
+        timestamp,
+        availability.presentation.replyText,
+      );
+    }
+
     return submitLeadFromState(storage, state, config, sessionId, timestamp);
   }
 
@@ -1749,6 +1909,14 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "offer_slots";
   }
 
+  if (state.isReturningCustomer && state.returningAddressAwaiting && !state.returningAddressConfirmed) {
+    return "confirm_returning_address";
+  }
+
+  if (!state.customer.firstName) {
+    return "collect_name";
+  }
+
   if (!state.customer.requestedService) {
     return "collect_service_type";
   }
@@ -1763,10 +1931,6 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
 
   if (!state.customer.zipCode) {
     return "collect_zip";
-  }
-
-  if (!state.customer.firstName) {
-    return "collect_name";
   }
 
   if (!state.customer.phone) {
@@ -1786,6 +1950,9 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
 
 function listMissingFields(state: ChatSessionState): string[] {
   const missing: string[] = [];
+  if (!state.customer.firstName) {
+    missing.push("first_name");
+  }
   if (!state.customer.requestedService) {
     missing.push("service_type");
   }
@@ -2134,6 +2301,22 @@ function looksLikeNameInput(text: string): boolean {
   const cleaned = normalized.replace(/[^a-zA-Z\s'-]/g, " ").trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
   return words.length >= 1 && words.length <= 3 && words.every((word) => /^[a-zA-Z'-]+$/.test(word));
+}
+
+function isAffirmativeReply(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return (
+    /^(y|yes|yeah|yep|yup|correct|still|same|👍)\b/i.test(t) ||
+    /\b(still here|same place|same address|that'?s right|sounds right)\b/i.test(t)
+  );
+}
+
+function isNegativeReply(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return (
+    /^(n|no|nope|nah|moved)\b/i.test(t) ||
+    /\b(new address|different address|not there|not anymore|new place)\b/i.test(t)
+  );
 }
 
 function isGreetingOnly(text: string): boolean {

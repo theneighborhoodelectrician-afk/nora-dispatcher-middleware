@@ -17,7 +17,9 @@ export type SkillTag =
   | "ev"
   | "service-change"
   | "rough-wiring"
-  | "residential";
+  | "residential"
+  | "panel_work"
+  | "remodel_estimates";
 
 export type BookingTarget = "job" | "estimate";
 
@@ -36,6 +38,15 @@ export type ServiceCategory =
   | "renovation"
   | "generic-electrical";
 
+export interface BookSmartJobQualifiers {
+  homeAge?: string;
+  panelBrand?: string;
+  ceilingHeight?: string;
+  pets?: string;
+  atticAccess?: string;
+  customerNotes?: string;
+}
+
 export interface CustomerRequest {
   firstName: string;
   lastName?: string;
@@ -48,6 +59,10 @@ export interface CustomerRequest {
   notes?: string;
   sameDayRequested?: boolean;
   preferredWindow?: "morning" | "afternoon";
+  /** Answers to BookSmart / Jess qualifying prompts; compiled into HCP job notes. */
+  bookSmartQualifiers?: BookSmartJobQualifiers;
+  /** When 2, recessed jobs use two consecutive named blocks (7+ lights). */
+  recessedSlotBlocks?: 1 | 2;
 }
 
 export interface ServiceProfile {
@@ -59,6 +74,9 @@ export interface ServiceProfile {
   target: BookingTarget;
   complexityScore: number;
   escalationKeywords?: string[];
+  /** 1 = one named block; 2 = two consecutive blocks; 3 = full day (all 3 blocks). */
+  slotBlockSpan?: 1 | 2 | 3;
+  requireConsecutiveBlocks?: boolean;
 }
 
 export interface TechnicianProfile {
@@ -110,7 +128,8 @@ export type AvailabilityStatus =
 export type EscalationReason =
   | "emergency_keyword_detected"
   | "no_viable_availability"
-  | "outside_service_area";
+  | "outside_service_area"
+  | "after_hours_or_weekend";
 
 export interface AvailabilityResponsePayload {
   success: boolean;

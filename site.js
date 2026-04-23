@@ -47,13 +47,14 @@ function formatEnvironmentLabel(environment) {
 }
 
 function applyHumanHandoffContact(payload) {
-  if (!payload || !payload.humanHandoffPhone || !payload.humanHandoffHref) {
+  const textHref = payload?.humanHandoffSmsHref || payload?.humanHandoffHref;
+  if (!payload || !payload.humanHandoffPhone || !textHref) {
     return;
   }
 
   handoffLinks.forEach((link) => {
-    link.href = payload.humanHandoffHref;
-    link.textContent = `Call or Text ${payload.humanHandoffPhone}`;
+    link.href = textHref;
+    link.textContent = `Text ${payload.humanHandoffPhone}`;
     link.hidden = false;
   });
 

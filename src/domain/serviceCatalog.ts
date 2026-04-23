@@ -74,6 +74,8 @@ const SERVICE_CATALOG: ServiceProfile[] = [
     preferredSkills: ["service-change"],
     target: "estimate",
     complexityScore: 8,
+    slotBlockSpan: 2,
+    requireConsecutiveBlocks: true,
   },
   {
     category: "panel-upgrade",
@@ -92,6 +94,8 @@ const SERVICE_CATALOG: ServiceProfile[] = [
     preferredSkills: [],
     target: "job",
     complexityScore: 7,
+    slotBlockSpan: 3,
+    requireConsecutiveBlocks: true,
   },
   {
     category: "rough-wiring",

@@ -247,6 +247,7 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
     case "collect_zip":
       return "address_collected";
     case "collect_name":
+      return "started";
     case "collect_phone":
     case "collect_email":
       return "contact_collected";
@@ -254,6 +255,8 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
       return state.analytics.photoRequested ? "photo_requested" : "contact_collected";
     case "ready_for_availability":
       return "contact_collected";
+    case "confirm_returning_address":
+      return "city_collected";
     case "lead_submitted":
       return "lead_submitted";
     case "offer_slots":

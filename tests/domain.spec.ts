@@ -40,28 +40,29 @@ describe("slot building", () => {
       {
         id: "job-1",
         technician: "Dave",
-        start: "2026-04-04T14:00:00.000Z",
-        end: "2026-04-04T15:00:00.000Z",
+        start: "2026-04-08T14:00:00.000Z",
+        end: "2026-04-08T15:00:00.000Z",
         zipCode: "48035",
         title: "Fixture replacement",
       },
     ];
 
     const service = classifyService(request.requestedService);
+    // Monday, April 6, 2026 — 12:00 America/Detroit (EDT) during business hours
     const slots = buildCandidateSlots(
       request,
       service,
       jobs,
       settings,
-      new Date("2026-04-04T11:00:00.000Z"),
+      new Date("2026-04-06T16:00:00.000Z"),
     );
 
     expect(slots.length).toBeGreaterThan(0);
-    expect(slots[0]?.technician).toBe("Dave");
+    expect(slots[0]?.technician).toBe("Brandon");
     expect(slots[0]?.bookingTarget).toBe("job");
   });
 
-  it("rounds same-day slot starts to clean half-hour windows", () => {
+  it("aligns offered slots to named day blocks (Morning / Midday / Afternoon)", () => {
     const request: CustomerRequest = {
       firstName: "Nate",
       phone: "555-111-2222",
@@ -75,11 +76,11 @@ describe("slot building", () => {
       service,
       [],
       settings,
-      new Date("2026-04-04T13:18:21.630Z"),
+      new Date("2026-04-06T16:00:00.000Z"),
     );
 
     expect(slots.length).toBeGreaterThan(0);
-    expect(new Date(slots[0]!.start).getUTCMinutes()).toBe(30);
+    expect(slots[0]!.label).toMatch(/Today|Tomorrow|—/);
     expect(new Date(slots[0]!.start).getUTCSeconds()).toBe(0);
   });
 
@@ -97,7 +98,7 @@ describe("slot building", () => {
       service,
       [],
       settings,
-      new Date("2026-04-04T11:00:00.000Z"),
+      new Date("2026-04-06T16:00:00.000Z"),
     );
 
     expect(slots).toHaveLength(0);
@@ -117,7 +118,7 @@ describe("slot building", () => {
       service,
       [],
       settings,
-      new Date("2026-04-04T11:00:00.000Z"),
+      new Date("2026-04-06T16:00:00.000Z"),
     );
 
     expect(slots.some((slot) => slot.technician === "Nate")).toBe(true);

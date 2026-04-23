@@ -4,39 +4,37 @@ export const TECHNICIANS: TechnicianProfile[] = [
   {
     name: "Nate",
     seniorityRank: 1,
-    skills: ["senior", "commercial", "troubleshooting", "ev", "service-change", "residential"],
+    skills: [
+      "senior",
+      "ev",
+      "service-change",
+      "rough-wiring",
+      "remodel_estimates",
+      "panel_work",
+      "residential",
+      "commercial",
+      "troubleshooting",
+    ],
     bookingTargets: ["estimate"],
-  },
-  {
-    name: "Steve",
-    seniorityRank: 1,
-    skills: ["senior", "commercial", "troubleshooting", "residential"],
   },
   {
     name: "Brandon",
     seniorityRank: 1,
-    skills: ["senior", "commercial", "troubleshooting", "residential"],
+    skills: ["senior", "commercial", "troubleshooting", "residential", "new-plugs", "recessed-lighting"],
+  },
+  {
+    name: "Steve",
+    seniorityRank: 1,
+    skills: ["senior", "commercial", "troubleshooting", "residential", "new-plugs", "recessed-lighting"],
   },
   {
     name: "Dave",
     seniorityRank: 2,
-    skills: [
-      "troubleshooting",
-      "fixtures",
-      "new-plugs",
-      "recessed-lighting",
-      "residential",
-    ],
+    skills: ["senior", "troubleshooting", "residential", "fixtures", "new-plugs", "recessed-lighting"],
   },
   {
     name: "Lou",
     seniorityRank: 2,
-    skills: [
-      "ev",
-      "service-change",
-      "rough-wiring",
-      "troubleshooting",
-      "residential",
-    ],
+    skills: ["senior", "commercial", "troubleshooting", "residential", "new-plugs", "ev"],
   },
 ];

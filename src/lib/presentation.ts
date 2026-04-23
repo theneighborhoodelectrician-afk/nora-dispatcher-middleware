@@ -72,6 +72,8 @@ function escalationReply(reason: EscalationReason | undefined): string {
       return "I'm having dispatch review this right now because it sounds urgent. They will call you in about 5 minutes.";
     case "outside_service_area":
       return "I'm having dispatch review this address and they will follow up with you directly.";
+    case "after_hours_or_weekend":
+      return "We typically schedule Monday through Friday. I've passed your info to our team and they'll reach out first thing to get you on the calendar.";
     case "no_viable_availability":
     default:
       return "I'm having my dispatch manager look at the schedule right now to squeeze you in. They will call you in about 5 minutes.";

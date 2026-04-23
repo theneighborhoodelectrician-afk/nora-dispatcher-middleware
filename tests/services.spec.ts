@@ -52,7 +52,7 @@ const baseRequest: CustomerRequest = {
 describe("availability service", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-04T11:00:00.000Z"));
+    vi.setSystemTime(new Date("2026-04-06T16:00:00.000Z"));
   });
 
   afterEach(() => {
@@ -71,7 +71,9 @@ describe("availability service", () => {
 
     expect(result.status).toBe("slots_available");
     expect(result.slots).toHaveLength(3);
-    expect(result.slots.every((slot) => slot.label.includes("at"))).toBe(true);
+    expect(result.slots.every((slot) => /Morning|Midday|Afternoon|—/.test(slot.label))).toBe(
+      true,
+    );
     expect(result.presentation.options).toHaveLength(3);
     expect(result.presentation.replyText).toContain("Do any of those work for you?");
   });
@@ -102,7 +104,7 @@ describe("availability service", () => {
 describe("booking service", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-04T11:00:00.000Z"));
+    vi.setSystemTime(new Date("2026-04-06T16:00:00.000Z"));
   });
 
   afterEach(() => {

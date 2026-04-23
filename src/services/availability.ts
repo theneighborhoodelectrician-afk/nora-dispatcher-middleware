@@ -1,7 +1,7 @@
 import { detectCounty } from "../domain/geography.js";
 import { analyzeRequest } from "../domain/intelligence.js";
 import { classifyService } from "../domain/serviceCatalog.js";
-import { buildCandidateSlots } from "../domain/scheduling.js";
+import { buildCandidateSlots, isAfterHoursOrWeekend } from "../domain/scheduling.js";
 import { AvailabilityResponsePayload, CustomerRequest } from "../domain/types.js";
 import { HousecallProClient } from "../integrations/housecallPro.js";
 import { AppConfig } from "../config.js";
@@ -28,6 +28,23 @@ export async function getAvailability(
         status: "human_escalation_required",
         slots: [],
         escalationReason: "emergency_keyword_detected",
+      }),
+    };
+  }
+
+  if (decision.bookingWindowClosed) {
+    return {
+      success: false,
+      status: "human_escalation_required",
+      message: "After hours or weekend — do not offer slots; lead follow-up only.",
+      service: decision.service,
+      slots: [],
+      escalationReason: "after_hours_or_weekend",
+      diagnostics: decision.diagnostics,
+      presentation: buildAvailabilityPresentation({
+        status: "human_escalation_required",
+        slots: [],
+        escalationReason: "after_hours_or_weekend",
       }),
     };
   }
@@ -93,10 +110,31 @@ export async function evaluateAvailability(
   slots: AvailabilityResponsePayload["slots"];
   allSlots: AvailabilityResponsePayload["slots"];
   diagnostics: NonNullable<AvailabilityResponsePayload["diagnostics"]>;
+  bookingWindowClosed: boolean;
 }> {
   const service = classifyService(customerRequest.requestedService);
   const intelligence = analyzeRequest(customerRequest, service);
   const now = new Date();
+  const bookingWindowClosed = isAfterHoursOrWeekend(now, config.scheduling.timezone);
+  if (bookingWindowClosed) {
+    return {
+      service,
+      intelligence,
+      slots: [],
+      allSlots: [],
+      bookingWindowClosed: true,
+      diagnostics: {
+        requestZipCode: customerRequest.zipCode,
+        requestCounty: detectCounty(customerRequest.zipCode),
+        fetchedScheduledJobs: 0,
+        matchingTechnicians: [],
+        candidateSlotCount: 0,
+        returnedSlotCount: 0,
+        preferredWindow: customerRequest.preferredWindow,
+        serviceCategory: service.category,
+      },
+    };
+  }
   const rangeEnd = new Date(
     now.getTime() + config.scheduling.maxLookaheadDays * 24 * 60 * 60 * 1000,
   );
@@ -115,6 +153,7 @@ export async function evaluateAvailability(
     intelligence,
     slots,
     allSlots,
+    bookingWindowClosed: false,
     diagnostics: {
       requestZipCode: customerRequest.zipCode,
       requestCounty: detectCounty(customerRequest.zipCode),

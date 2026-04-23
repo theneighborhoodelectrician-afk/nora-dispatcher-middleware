@@ -73,6 +73,7 @@ export async function createBooking(
       email: customerRequest.email,
       address: customerRequest.address,
       zipCode: customerRequest.zipCode,
+      bookSmartQualifiers: customerRequest.bookSmartQualifiers,
     },
     serviceName: service.title,
     notes: customerRequest.notes,

@@ -1,5 +1,5 @@
 import { TECHNICIANS } from "./technicians.js";
-import { detectCounty, estimateDriveMinutes, normalizeZip } from "./geography.js";
+import { detectCounty, normalizeZip } from "./geography.js";
 import {
   CandidateSlot,
   CustomerRequest,
@@ -7,7 +7,12 @@ import {
   ServiceProfile,
   TechnicianProfile,
 } from "./types.js";
-import { formatSlotLabel } from "../lib/formatting.js";
+
+export const SLOT_BLOCKS = [
+  { label: "Morning", startHour: 9, endHour: 12 },
+  { label: "Midday", startHour: 12, endHour: 14 },
+  { label: "Afternoon", startHour: 14, endHour: 17 },
+] as const;
 
 export interface SchedulingSettings {
   timezone: string;
@@ -17,6 +22,33 @@ export interface SchedulingSettings {
   maxLookaheadDays: number;
   minLeadHours: number;
   bufferMinutes: number;
+}
+
+/** True if local time in `timeZone` is Sat/Sun or outside 8:00–18:00 Mon–Fri. */
+export function isAfterHoursOrWeekend(date: Date, timeZone: string): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(date);
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const hour = Number(hourStr);
+  if (wd === "Saturday" || wd === "Sunday") {
+    return true;
+  }
+  if (hour < 8 || hour >= 18) {
+    return true;
+  }
+  return false;
+}
+
+function effectiveSlotBlockSpan(service: ServiceProfile, request: CustomerRequest): 1 | 2 | 3 {
+  if (service.category === "recessed-lighting") {
+    return request.recessedSlotBlocks === 2 ? 2 : 1;
+  }
+  return service.slotBlockSpan ?? 1;
 }
 
 export function buildCandidateSlots(
@@ -29,6 +61,10 @@ export function buildCandidateSlots(
 ): CandidateSlot[] {
   const normalizedZip = normalizeZip(request.zipCode);
   const technicians = TECHNICIANS.filter((tech) => technicianMatchesService(tech, service));
+  const blockSpan = effectiveSlotBlockSpan(service, request);
+  const needConsecutive =
+    service.requireConsecutiveBlocks === true ||
+    (blockSpan > 1 && (service.category === "ev-charger" || service.category === "recessed-lighting"));
   const slots: CandidateSlot[] = [];
 
   for (const technician of technicians) {
@@ -37,55 +73,107 @@ export function buildCandidateSlots(
       .sort((a, b) => a.start.localeCompare(b.start));
 
     for (let dayOffset = 0; dayOffset < settings.maxLookaheadDays; dayOffset += 1) {
-      const dayStart = startOfBusinessDay(now, dayOffset, settings.openingHour);
-      const dayEnd = endOfBusinessDay(now, dayOffset, settings.closingHour);
+      if (isWeekendInTimeZone(now, dayOffset, settings.timezone)) {
+        continue;
+      }
 
       if (request.sameDayRequested && dayOffset > 0) {
         break;
       }
 
+      const dayLabel = buildDayPartLabel(now, dayOffset, settings.timezone);
       const earliestAllowed = new Date(now.getTime() + settings.minLeadHours * 60 * 60 * 1000);
-      const existing = techJobs.filter((job) => sameDate(job.start, dayStart));
-      let pointer = new Date(Math.max(dayStart.getTime(), earliestAllowed.getTime()));
 
-      if (!existing.length) {
-        maybePushSlot(slots, {
+      if (blockSpan === 3) {
+        const start = startOfZonedDayHour(now, dayOffset, SLOT_BLOCKS[0]!.startHour, settings.timezone);
+        const end = startOfZonedDayHour(now, dayOffset, SLOT_BLOCKS[2]!.endHour, settings.timezone);
+        if (end <= earliestAllowed) {
+          continue;
+        }
+        const pointer = new Date(Math.max(start.getTime(), earliestAllowed.getTime()));
+        if (pointer >= end) {
+          continue;
+        }
+        if (!fitsBetweenJobs(now, techJobs, pointer, end, dayOffset, settings)) {
+          continue;
+        }
+        const b0 = SLOT_BLOCKS[0]!;
+        const b2 = SLOT_BLOCKS[2]!;
+        const label = `${dayLabel} — Full day (${b0.startHour}–${b2.endHour})`;
+        pushBlockSlot(
+          slots,
           request,
           service,
           technician,
-          windowStart: pointer,
-          dayEnd,
-          previousJob: undefined,
-          nextJob: undefined,
+          pointer,
+          end,
+          label,
+          dayOffset,
+          normalizedZip,
           settings,
-          now,
-        });
+        );
         continue;
       }
 
-      for (let index = 0; index <= existing.length; index += 1) {
-        const previousJob = existing[index - 1];
-        const nextJob = existing[index];
-
-        if (previousJob) {
-          const previousEnd = new Date(previousJob.end);
-          const driveAfterPrevious = estimateDriveMinutes(previousJob.zipCode, normalizedZip);
-          pointer = new Date(
-            previousEnd.getTime() + (driveAfterPrevious + settings.bufferMinutes) * 60_000,
+      if (blockSpan === 2 && needConsecutive) {
+        for (let i = 0; i < SLOT_BLOCKS.length - 1; i += 1) {
+          const a = SLOT_BLOCKS[i]!;
+          const b = SLOT_BLOCKS[i + 1]!;
+          const start = startOfZonedDayHour(now, dayOffset, a.startHour, settings.timezone);
+          const end = startOfZonedDayHour(now, dayOffset, b.endHour, settings.timezone);
+          if (end <= earliestAllowed) {
+            continue;
+          }
+          const pointer = new Date(Math.max(start.getTime(), earliestAllowed.getTime()));
+          if (pointer >= end) {
+            continue;
+          }
+          if (!fitsBetweenJobs(now, techJobs, pointer, end, dayOffset, settings)) {
+            continue;
+          }
+          const label = `${dayLabel} — ${a.label} + ${b.label} (${formatHourRange(a.startHour, b.endHour)})`;
+          pushBlockSlot(
+            slots,
+            request,
+            service,
+            technician,
+            pointer,
+            end,
+            label,
+            dayOffset,
+            normalizedZip,
+            settings,
           );
         }
+        continue;
+      }
 
-        maybePushSlot(slots, {
+      for (const block of SLOT_BLOCKS) {
+        const start = startOfZonedDayHour(now, dayOffset, block.startHour, settings.timezone);
+        const end = startOfZonedDayHour(now, dayOffset, block.endHour, settings.timezone);
+        if (end <= earliestAllowed) {
+          continue;
+        }
+        const pointer = new Date(Math.max(start.getTime(), earliestAllowed.getTime()));
+        if (pointer >= end) {
+          continue;
+        }
+        if (!fitsBetweenJobs(now, techJobs, pointer, end, dayOffset, settings)) {
+          continue;
+        }
+        const labelFixed = `${dayLabel} — ${block.label} (${formatHourRange(block.startHour, block.endHour)})`;
+        pushBlockSlot(
+          slots,
           request,
           service,
           technician,
-          windowStart: pointer,
-          dayEnd,
-          previousJob,
-          nextJob,
+          pointer,
+          end,
+          labelFixed,
+          dayOffset,
+          normalizedZip,
           settings,
-          now,
-        });
+        );
       }
     }
   }
@@ -93,141 +181,101 @@ export function buildCandidateSlots(
   return dedupeAndRankSlots(slots, limit);
 }
 
-function maybePushSlot(
-  slots: CandidateSlot[],
-  {
-    request,
-    service,
-    technician,
-    windowStart,
-    dayEnd,
-    previousJob,
-    nextJob,
-    settings,
-    now,
-  }: {
-  request: CustomerRequest;
-  service: ServiceProfile;
-  technician: TechnicianProfile;
-  windowStart: Date;
-  dayEnd: Date;
-  previousJob?: ScheduledJob;
-  nextJob?: ScheduledJob;
-  settings: SchedulingSettings;
-  now: Date;
-}): void {
-  const sameDayBaseline = now;
-  const candidateStart = roundUpToSlotWindow(windowStart);
-  const requestZip = normalizeZip(request.zipCode);
-  const driveBefore = previousJob
-    ? estimateDriveMinutes(previousJob.zipCode, requestZip)
-    : startingDriveMinutes(requestZip);
-  const candidateEnd = new Date(
-    candidateStart.getTime() + (service.durationMinutes + settings.bufferMinutes) * 60_000,
-  );
+function formatHourRange(start: number, end: number): string {
+  const fmt = (h: number) => (h > 12 ? `${h - 12}` : `${h}`);
+  return `${fmt(start)}–${fmt(end)}`;
+}
 
-  if (candidateEnd > dayEnd) {
-    return;
+function isWeekendInTimeZone(now: Date, dayOffset: number, timeZone: string): boolean {
+  const t = new Date(now);
+  t.setDate(t.getDate() + dayOffset);
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(t);
+  return wd === "Saturday" || wd === "Sunday";
+}
+
+function buildDayPartLabel(now: Date, dayOffset: number, timeZone: string): string {
+  if (dayOffset === 0) {
+    return "Today";
   }
+  if (dayOffset === 1) {
+    return "Tomorrow";
+  }
+  const t = new Date(now);
+  t.setDate(t.getDate() + dayOffset);
+  return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(t);
+}
 
-  if (nextJob) {
-    const nextStart = new Date(nextJob.start);
-    const driveToNext = estimateDriveMinutes(requestZip, nextJob.zipCode);
-    const latestAllowed = new Date(
-      nextStart.getTime() - (driveToNext + settings.bufferMinutes) * 60_000,
-    );
-    if (candidateEnd > latestAllowed) {
-      return;
+/** Approximate America/Detroit wall time as UTC by shifting from plain local date (see legacy startOfBusinessDay). */
+function startOfZonedDayHour(now: Date, dayOffset: number, hour: number, _timeZone: string): Date {
+  const date = new Date(now);
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  date.setUTCHours(hour + 4, 0, 0, 0);
+  return date;
+}
+
+function fitsBetweenJobs(
+  now: Date,
+  techJobs: ScheduledJob[],
+  windowStart: Date,
+  windowEnd: Date,
+  dayOffset: number,
+  settings: SchedulingSettings,
+): boolean {
+  const dayStart = startOfZonedDayHour(now, dayOffset, 6, settings.timezone);
+  const existing = techJobs.filter((job) => sameDateLocal(job.start, dayStart));
+  if (!existing.length) {
+    return true;
+  }
+  for (const job of existing) {
+    const js = new Date(job.start);
+    const je = new Date(job.end);
+    if (windowStart < je && windowEnd > js) {
+      return false;
     }
   }
+  return true;
+}
 
-  const county = detectCounty(requestZip);
+function sameDateLocal(iso: string, dayStart: Date): boolean {
+  return new Date(iso).toDateString() === dayStart.toDateString();
+}
+
+function pushBlockSlot(
+  slots: CandidateSlot[],
+  request: CustomerRequest,
+  service: ServiceProfile,
+  technician: TechnicianProfile,
+  start: Date,
+  end: Date,
+  label: string,
+  _dayOffset: number,
+  requestZip: string,
+  _settings: SchedulingSettings,
+): void {
+  const county = detectCounty(request.zipCode);
   if (county === "other") {
     return;
   }
-
+  const driveBefore = startingDriveMinutes(requestZip);
   const skillScore = technician.seniorityRank === 1 ? 20 : 10;
   const preferenceScore = service.preferredSkills.some((skill) => technician.skills.includes(skill))
     ? 10
     : 0;
-  const sameDayScore =
-    request.sameDayRequested && sameDate(candidateStart.toISOString(), sameDayBaseline)
-      ? 8
-      : 0;
-  const travelPenalty = Math.round((driveBefore / 10) * -1);
   const complexityBoost = Math.max(0, service.complexityScore - technician.seniorityRank * 2);
-
   slots.push({
     technician: technician.name,
-    start: candidateStart.toISOString(),
-    end: new Date(candidateStart.getTime() + service.durationMinutes * 60_000).toISOString(),
-    score: skillScore + preferenceScore + sameDayScore + travelPenalty + complexityBoost,
-    reason: buildReason(technician.name, service.title, driveBefore, county),
+    start: start.toISOString(),
+    end: end.toISOString(),
+    score: skillScore + preferenceScore + complexityBoost,
+    reason: `${technician.name} is qualified for ${service.title} (${label}).`,
     driveMinutes: driveBefore,
     serviceCategory: service.category,
     bookingTarget: service.target,
-    label: formatSlotLabel(candidateStart.toISOString(), settings.timezone, now),
+    label,
   });
 }
 
-function buildReason(
-  technician: string,
-  serviceTitle: string,
-  driveMinutes: number,
-  county: string,
-): string {
-  return `${technician} is qualified for ${serviceTitle.toLowerCase()} with an estimated ${driveMinutes}-minute drive in ${county} county coverage.`;
-}
-
-function sameDate(leftIso: string, right: Date): boolean;
-function sameDate(leftIso: string, rightIso: string): boolean;
-function sameDate(leftIso: string, right: Date | string): boolean {
-  const left = new Date(leftIso);
-  const rightDate = typeof right === "string" ? new Date(right) : right;
-  return (
-    left.getUTCFullYear() === rightDate.getUTCFullYear() &&
-    left.getUTCMonth() === rightDate.getUTCMonth() &&
-    left.getUTCDate() === rightDate.getUTCDate()
-  );
-}
-
-function startOfBusinessDay(now: Date, dayOffset: number, openingHour: number): Date {
-  const date = new Date(now);
-  date.setUTCDate(date.getUTCDate() + dayOffset);
-  date.setUTCHours(openingHour + 4, 0, 0, 0);
-  return date;
-}
-
-function endOfBusinessDay(now: Date, dayOffset: number, closingHour: number): Date {
-  const date = new Date(now);
-  date.setUTCDate(date.getUTCDate() + dayOffset);
-  date.setUTCHours(closingHour + 4, 0, 0, 0);
-  return date;
-}
-
-function startingDriveMinutes(zipCode: string): number {
-  return detectCounty(zipCode) === "macomb" ? 20 : 25;
-}
-
-function roundUpToSlotWindow(date: Date, incrementMinutes = 30): Date {
-  const rounded = new Date(date);
-  rounded.setUTCSeconds(0, 0);
-
-  const minutes = rounded.getUTCMinutes();
-  const remainder = minutes % incrementMinutes;
-
-  if (remainder === 0) {
-    return rounded;
-  }
-
-  rounded.setUTCMinutes(minutes + (incrementMinutes - remainder), 0, 0);
-  return rounded;
-}
-
-function technicianMatchesService(
-  technician: TechnicianProfile,
-  service: ServiceProfile,
-): boolean {
+function technicianMatchesService(technician: TechnicianProfile, service: ServiceProfile): boolean {
   if (technician.bookingTargets && !technician.bookingTargets.includes(service.target)) {
     return false;
   }
@@ -252,4 +300,8 @@ function dedupeAndRankSlots(slots: CandidateSlot[], limit: number): CandidateSlo
       return true;
     })
     .slice(0, limit);
+}
+
+function startingDriveMinutes(zipCode: string): number {
+  return detectCounty(zipCode) === "macomb" ? 20 : 25;
 }

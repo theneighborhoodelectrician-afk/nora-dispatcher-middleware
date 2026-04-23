@@ -10,6 +10,7 @@ export const bookSmartSkillTagSchema = z.enum([
   "remodel_estimates",
   "generators",
   "smart_home",
+  "recessed_lighting",
 ]);
 
 export const bookSmartServiceTypeIdSchema = z.enum([
@@ -50,6 +51,9 @@ export const serviceTypeConfigSchema = z.object({
   priorityLevel: z.number().int().nonnegative(),
   classifierPhrases: z.array(z.string().min(1)),
   requestedServiceLabel: z.string().min(1),
+  durationSlots: z.number().int().positive().optional(),
+  consecutiveSlots: z.boolean().optional(),
+  askCeilingHeight: z.boolean().optional(),
 });
 
 export const bookSmartConfigSchema = z.object({

@@ -1,7 +1,74 @@
 import { AppConfig } from "../config.js";
+import { CustomerRequest, ScheduledJob, TechnicianName } from "../domain/types.js";
 import { ExternalServiceError } from "../lib/errors.js";
 import { buildUrl, readJson } from "../lib/http.js";
-import { ScheduledJob, TechnicianName } from "../domain/types.js";
+
+export function buildBookSmartHcpJobNotes(payload: {
+  serviceName: string;
+  notes?: string;
+  customer: {
+    bookSmartQualifiers?: CustomerRequest["bookSmartQualifiers"];
+  };
+}): string {
+  const q = payload.customer.bookSmartQualifiers;
+  const lines: string[] = ["Booked via BookSmart"];
+  if (q?.homeAge) {
+    lines.push(`Home age: ${q.homeAge}`);
+  }
+  if (q?.panelBrand) {
+    lines.push(`Panel brand: ${q.panelBrand}`);
+  }
+  if (q?.ceilingHeight) {
+    lines.push(`Ceiling height: ${q.ceilingHeight}`);
+  }
+  if (q?.pets) {
+    lines.push(`Pets: ${q.pets}`);
+  }
+  if (q?.atticAccess) {
+    lines.push(`Attic access: ${q.atticAccess}`);
+  }
+  const freeform = [q?.customerNotes, payload.notes].filter(Boolean).join(" ").trim();
+  if (freeform) {
+    lines.push(`Customer notes: ${freeform}`);
+  }
+  if (lines.length === 1) {
+    lines.push(`Service: ${payload.serviceName}`);
+  }
+  return lines.join("\n");
+}
+
+export async function lookupCustomerByPhone(
+  phone: string,
+  config: AppConfig["hcp"],
+): Promise<{
+  found: boolean;
+  firstName?: string;
+  address?: string;
+  city?: string;
+  zipCode?: string;
+  email?: string;
+}> {
+  if (!phone?.trim() || !config.token) {
+    return { found: false };
+  }
+  try {
+    const client = new HousecallProClient(config);
+    const customer = await client.fetchCustomerByPhoneLookup(phone);
+    if (!customer) {
+      return { found: false };
+    }
+    return {
+      found: true,
+      firstName: customer.first_name,
+      address: customer.address?.street,
+      city: customer.address?.city,
+      zipCode: customer.address?.zip,
+      email: customer.email,
+    };
+  } catch {
+    return { found: false };
+  }
+}
 
 export interface HousecallJobResponse {
   jobs?: Array<{
@@ -133,6 +200,7 @@ export class HousecallProClient {
       email?: string;
       address?: string;
       zipCode: string;
+      bookSmartQualifiers?: CustomerRequest["bookSmartQualifiers"];
     };
     serviceName: string;
     notes?: string;
@@ -169,7 +237,7 @@ export class HousecallProClient {
       },
       assigned_employees: assignedEmployeeId ? [{ id: assignedEmployeeId }] : [],
       description: payload.serviceName,
-      notes: payload.notes,
+      notes: buildBookSmartHcpJobNotes(payload),
     };
 
     const response = await fetch(buildUrl(this.config.baseUrl, path), {
@@ -402,6 +470,33 @@ export class HousecallProClient {
     }
 
     throw new ExternalServiceError("Housecall Pro request retry logic exhausted unexpectedly.");
+  }
+
+  async fetchCustomerByPhoneLookup(
+    phone: string,
+  ): Promise<NonNullable<HousecallCustomerResponse["customers"]>[number] | undefined> {
+    if (!this.config.token) {
+      return undefined;
+    }
+    const response = await fetch(
+      buildUrl(this.config.baseUrl, this.config.customerPath, {
+        page_size: "100",
+        search: phone,
+      }),
+      {
+        headers: this.headers(),
+      },
+    );
+    if (!response.ok) {
+      return undefined;
+    }
+    const body = await readJson<HousecallCustomerResponse>(response);
+    const normalized = normalizePhone(phone);
+    return body.customers?.find((candidate) =>
+      [candidate.mobile_number, candidate.home_number]
+        .filter(Boolean)
+        .some((p) => normalizePhone(p!) === normalized),
+    );
   }
 
   private async findCustomer(customer: {

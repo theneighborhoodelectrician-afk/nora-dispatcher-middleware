@@ -14,5 +14,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse):
     adminProtected: Boolean(config.admin.secret),
     humanHandoffPhone: config.contact.humanHandoffPhone ?? null,
     humanHandoffHref: config.contact.humanHandoffHref ?? null,
+    humanHandoffCallHref: config.contact.humanHandoffCallHref ?? null,
+    humanHandoffSmsHref: config.contact.humanHandoffSmsHref ?? null,
   });
 }
