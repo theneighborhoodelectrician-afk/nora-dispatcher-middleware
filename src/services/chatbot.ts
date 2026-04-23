@@ -153,41 +153,6 @@ export async function handleChatMessage(
     },
   });
 
-  // Check guards before letting OpenAI respond
-  const guardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
-  if (guardReply) {
-    return guardReply;
-  }
-
-  const shouldUseOpenAi = shouldUseOpenAiConversationFlow(config, bookSmartConfig, state, messageText);
-
-  if (shouldUseOpenAi) {
-    const aiReply = await tryHandleChatMessageWithOpenAi(
-      storage,
-      config,
-      bookSmartConfig,
-      state,
-      messageText,
-      sessionId,
-      now,
-    );
-    if (aiReply) {
-      return aiReply;
-    }
-  }
-
-  const knowledgeReply = await maybeHandleKnowledgeReply(
-    storage,
-    state,
-    messageText,
-    bookSmartConfig,
-    sessionId,
-    now,
-  );
-  if (knowledgeReply) {
-    return persistReply(storage, state, knowledgeReply, now);
-  }
-
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
     const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
     if (selectedOption) {
@@ -290,6 +255,42 @@ export async function handleChatMessage(
         handoffRequired: true,
       }, now);
     }
+  }
+
+  if (state.stage !== "offer_slots") {
+    const guardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
+    if (guardReply) {
+      return guardReply;
+    }
+  }
+
+  const shouldUseOpenAi = shouldUseOpenAiConversationFlow(config, bookSmartConfig, state, messageText);
+
+  if (shouldUseOpenAi) {
+    const aiReply = await tryHandleChatMessageWithOpenAi(
+      storage,
+      config,
+      bookSmartConfig,
+      state,
+      messageText,
+      sessionId,
+      now,
+    );
+    if (aiReply) {
+      return aiReply;
+    }
+  }
+
+  const knowledgeReply = await maybeHandleKnowledgeReply(
+    storage,
+    state,
+    messageText,
+    bookSmartConfig,
+    sessionId,
+    now,
+  );
+  if (knowledgeReply) {
+    return persistReply(storage, state, knowledgeReply, now);
   }
 
   if (shouldHandOff(messageText)) {
