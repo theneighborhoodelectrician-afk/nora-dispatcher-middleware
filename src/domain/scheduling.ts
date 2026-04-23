@@ -27,26 +27,6 @@ export interface SchedulingSettings {
   bufferMinutes: number;
 }
 
-/** True if local time in `timeZone` is Sat/Sun or outside 8:00–18:00 Mon–Fri. */
-export function isAfterHoursOrWeekend(date: Date, timeZone: string): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    hour: "numeric",
-    hour12: false,
-  }).formatToParts(date);
-  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
-  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
-  const hour = Number(hourStr);
-  if (wd === "Saturday" || wd === "Sunday") {
-    return true;
-  }
-  if (hour < 8 || hour >= 18) {
-    return true;
-  }
-  return false;
-}
-
 function effectiveSlotBlockSpan(service: ServiceProfile, request: CustomerRequest): 1 | 2 | 3 {
   if (service.category === "recessed-lighting") {
     return request.recessedSlotBlocks === 2 ? 2 : 1;

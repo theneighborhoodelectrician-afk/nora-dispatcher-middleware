@@ -1201,11 +1201,16 @@ function mergeState(
 }
 
 function shouldReuseExistingSession(state: ChatSessionState, messageText: string): boolean {
-  if (!isTerminalSessionState(state)) {
+  if (!isTerminalSessionState(state) && !isAwaitingSlotSelection(state)) {
     return true;
   }
 
   return !looksLikeFreshConversationStart(messageText);
+}
+
+/** Slots were offered but the customer has not booked yet — allow the same "fresh start" reset as a submitted lead. */
+function isAwaitingSlotSelection(state: ChatSessionState): boolean {
+  return state.stage === "offer_slots" && (state.lastOfferedOptions?.length ?? 0) > 0;
 }
 
 function isTerminalSessionState(state: ChatSessionState): boolean {
@@ -1835,17 +1840,6 @@ async function enforceBookSmartGuards(
     // No bookable slots: set before submit so downstream logic (e.g. OpenAI on the same turn) sees a terminal lead state
     if (availability.status !== "slots_available" || availability.slots.length === 0) {
       state.bookingStatus = "lead_submitted";
-    }
-
-    if (availability.escalationReason === "after_hours_or_weekend" && availability.presentation?.replyText) {
-      return submitLeadFromState(
-        storage,
-        state,
-        config,
-        sessionId,
-        timestamp,
-        availability.presentation.replyText,
-      );
     }
 
     return submitLeadFromState(storage, state, config, sessionId, timestamp);

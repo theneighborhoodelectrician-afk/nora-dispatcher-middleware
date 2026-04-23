@@ -347,7 +347,8 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage({ sessionId, text: "nate@example.com" }, storage, config);
     const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, config);
 
-    expect(leadReply.stage).toBe("lead_submitted");
+    expect(leadReply.stage).toBe("offer_slots");
+    expect(leadReply.replyText.toLowerCase()).toContain("next available");
 
     const restartReply = await handleChatMessage(
       {
@@ -366,7 +367,7 @@ describe("BookSmart chat flow", () => {
     expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
   });
 
-  it("keeps the existing context after lead submission when the customer asks a follow-up question", async () => {
+  it("keeps the existing context after slots are offered when the customer asks a follow-up question", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
@@ -399,7 +400,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage({ sessionId, text: "brad@example.com" }, storage, aiConfig);
     const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, aiConfig);
 
-    expect(leadReply.stage).toBe("lead_submitted");
+    expect(leadReply.stage).toBe("offer_slots");
 
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
@@ -427,10 +428,10 @@ describe("BookSmart chat flow", () => {
     expect(storedSession?.payload.customer.city).toBe("Fraser");
     expect(storedSession?.payload.customer.address).toBe("22311 Garfield");
     expect(storedSession?.payload.customer.zipCode).toBe("48026");
-    expect(storedSession?.payload.bookingStatus).toBe("lead_submitted");
+    expect(storedSession?.payload.bookingStatus).toBe("offered");
   });
 
-  it("submits a lead after city, service, address, name, and time preference are collected", async () => {
+  it("offers time slots after city, service, address, name, and time preference are collected", async () => {
     const storage = new MemoryStorageAdapter();
 
     await handleChatMessage(
@@ -502,10 +503,10 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("lead_submitted");
-    expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
-    expect(reply.replyText).toContain("586-489-1504");
+    expect(reply.stage).toBe("offer_slots");
+    expect(reply.replyText.toLowerCase()).toContain("next available");
+    expect(reply.replyText.toLowerCase()).toMatch(/1, 2, or 3/);
+    expect(reply.options?.length).toBeGreaterThan(0);
   });
 
   it("submits a lead through the OpenAI runtime path instead of offering slots", async () => {
@@ -917,7 +918,7 @@ describe("BookSmart chat flow", () => {
     expect(fourthReply.handoffRequired).toBeUndefined();
   });
 
-  it("submits a lead instead of claiming a booked slot", async () => {
+  it("offers slots instead of claiming a booking before a time is selected", async () => {
     const storage = new MemoryStorageAdapter();
 
     await handleChatMessage(
@@ -980,10 +981,9 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(reply.stage).toBe("lead_submitted");
-    expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("i'll get it on the calendar asap");
-    expect(reply.replyText).toContain("586-489-1504");
+    expect(reply.stage).toBe("offer_slots");
+    expect(reply.replyText.toLowerCase()).toContain("next available");
+    expect(reply.options?.length).toBeGreaterThan(0);
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {
@@ -1065,10 +1065,10 @@ describe("BookSmart chat flow", () => {
     const bookingEvents = await storage.listBookingEvents("booksmart-analytics-book");
 
     expect(conversation?.leadSource).toBe("website");
-    expect(outcome?.bookedYesNo).toBe(true);
-    expect(outcome?.availabilityShown).toBe(false);
+    expect(outcome?.bookedYesNo).toBe(false);
+    expect(outcome?.availabilityShown).toBe(true);
     expect(outcome?.slotSelected).toBe(false);
-    expect(outcome?.slotsShownCount).toBe(0);
+    expect(outcome?.slotsShownCount).toBeGreaterThan(0);
     expect(stages.map((stage) => stage.stage)).toEqual(
       expect.arrayContaining([
         "started",
@@ -1076,15 +1076,17 @@ describe("BookSmart chat flow", () => {
         "service_identified",
         "address_collected",
         "contact_collected",
-        "lead_submitted",
+        "availability_presented",
       ]),
     );
     expect(messages.some((message) => message.direction === "inbound")).toBe(true);
     expect(messages.some((message) => message.direction === "outbound")).toBe(true);
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
-    expect(slots).toHaveLength(0);
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(
+      false,
+    );
+    expect(slots.length).toBeGreaterThan(0);
     expect(leadSource?.code).toBe("website");
-    expect(bookingEvents).toHaveLength(1);
+    expect(bookingEvents).toHaveLength(0);
   });
 
   it("asks for email before submitting the lead when email is missing", async () => {
