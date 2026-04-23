@@ -1773,7 +1773,7 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
 }
 
 function isLeadOnlyLaunch(_config: AppConfig): boolean {
-  return true;
+  return false;
 }
 
 function readStateUpdateArgs(args: unknown): Partial<CustomerRequest> {
