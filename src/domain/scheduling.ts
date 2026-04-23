@@ -73,6 +73,7 @@ export function buildCandidateSlots(
       .sort((a, b) => a.start.localeCompare(b.start));
 
     for (let dayOffset = 0; dayOffset < settings.maxLookaheadDays; dayOffset += 1) {
+      // Never offer Saturday (6) or Sunday (0) — weekdays only. See isWeekendInTimeZone.
       if (isWeekendInTimeZone(now, dayOffset, settings.timezone)) {
         continue;
       }
@@ -186,11 +187,21 @@ function formatHourRange(start: number, end: number): string {
   return `${fmt(start)}–${fmt(end)}`;
 }
 
+/**
+ * Excludes Sunday (calendar weekday long name) and Saturday in the scheduling IANA time zone.
+ * (JS convention for day-of-week is 0=Sunday, 6=Saturday; this uses tz-local calendar days.)
+ */
 function isWeekendInTimeZone(now: Date, dayOffset: number, timeZone: string): boolean {
   const t = new Date(now);
   t.setDate(t.getDate() + dayOffset);
-  const wd = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(t);
-  return wd === "Saturday" || wd === "Sunday";
+  const dtf = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" });
+  const long = dtf.format(t);
+  if (long === "Saturday" || long === "Sunday") {
+    return true;
+  }
+  // Defense in depth: also match short names (Sat / Sun) in the same time zone
+  const shortName = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(t);
+  return shortName === "Sat" || shortName === "Sun";
 }
 
 function buildDayPartLabel(now: Date, dayOffset: number, timeZone: string): string {
