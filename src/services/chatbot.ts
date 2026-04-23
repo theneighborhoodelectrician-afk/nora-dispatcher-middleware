@@ -1614,39 +1614,6 @@ async function enforceBookSmartGuards(
     return submitLeadFromState(storage, state, config, sessionId, timestamp);
   }
 
-  if (shouldSubmitLead(state) && state.bookingStatus !== "offered" && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff" && state.bookingStatus !== "lead_submitted") {
-    const customerRequest = toCustomerRequest(state.customer);
-    const availability = await getAvailabilityTool(customerRequest, { rawClient: config.hcp }, config);
-    if (availability.status === "slots_available" && availability.slots.length > 0) {
-      const options = availability.slots.map((slot) => ({
-        label: slot.label,
-        start: slot.start,
-        end: slot.end,
-        technician: slot.technician,
-        bookingTarget: slot.bookingTarget,
-      }));
-      state.lastOfferedOptions = options;
-      state.stage = "offer_slots";
-      state.bookingStatus = "offered";
-      state.analytics.slotsShownCount += options.length;
-      await recordSlotExposureSet(storage, state, options, timestamp);
-      await recordStageOnce(storage, state, "availability_presented", timestamp, { slotCount: options.length });
-      const slotList = options.map((o, i) => `${i + 1}. ${o.label}`).join("
-");
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: `Here are our next available times:
-${slotList}
-
-Reply with 1, 2, or 3 to confirm your appointment.`,
-        stage: state.stage,
-        options,
-      }, timestamp);
-    }
-    return submitLeadFromState(storage, state, config, sessionId, timestamp);
-  }
-
   return undefined;
 }
 
