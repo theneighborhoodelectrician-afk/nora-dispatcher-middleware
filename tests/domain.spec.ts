@@ -89,6 +89,34 @@ describe("slot building", () => {
     expect(new Date(slots[0]!.start).getUTCSeconds()).toBe(0);
   });
 
+  it("spreads the top three slots across different calendar days when available", () => {
+    const request: CustomerRequest = {
+      firstName: "Nate",
+      phone: "555-111-2222",
+      zipCode: "48038",
+      requestedService: "Install recessed lights in living room",
+    };
+    const service = classifyService(request.requestedService);
+    const spreadSettings = { ...settings, defaultSlotCount: 3, maxLookaheadDays: 7 };
+    const slots = buildCandidateSlots(
+      request,
+      service,
+      [],
+      spreadSettings,
+      new Date("2026-04-06T16:00:00.000Z"),
+    );
+    expect(slots).toHaveLength(3);
+    const dayKeys = slots.map((s) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: spreadSettings.timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(s.start)),
+    );
+    expect(new Set(dayKeys).size).toBe(3);
+  });
+
   it("filters out unsupported counties", () => {
     const request: CustomerRequest = {
       firstName: "Nate",

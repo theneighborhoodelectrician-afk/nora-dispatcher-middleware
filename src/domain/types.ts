@@ -19,7 +19,9 @@ export type SkillTag =
   | "rough-wiring"
   | "residential"
   | "panel_work"
-  | "remodel_estimates";
+  | "remodel_estimates"
+  | "service_calls"
+  | "lighting";
 
 export type BookingTarget = "job" | "estimate";
 

@@ -46,6 +46,7 @@ export const serviceTypeConfigSchema = z.object({
   id: bookSmartServiceTypeIdSchema,
   displayName: z.string().min(1),
   category: bookSmartServiceCategorySchema,
+  target: z.enum(["job", "estimate"]),
   requiredSkills: z.array(bookSmartSkillTagSchema),
   photoRequest: z.enum(["never", "recommended"]),
   priorityLevel: z.number().int().nonnegative(),

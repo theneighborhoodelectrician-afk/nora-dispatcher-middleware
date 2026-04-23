@@ -39,10 +39,14 @@ export type BookSmartServiceTypeId =
   | "service_mast_or_meter_issue"
   | "unsafe_panel_condition";
 
+export type BookSmartBookingTarget = "job" | "estimate";
+
 export interface ServiceTypeConfig {
   id: BookSmartServiceTypeId;
   displayName: string;
   category: BookSmartServiceCategory;
+  /** HCP / scheduling intent: in-home job visit vs. estimate. */
+  target: BookSmartBookingTarget;
   requiredSkills: BookSmartSkillTag[];
   photoRequest: "never" | "recommended";
   priorityLevel: number;

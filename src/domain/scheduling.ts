@@ -162,7 +162,7 @@ export function buildCandidateSlots(
     }
   }
 
-  return dedupeAndRankSlots(slots, limit);
+  return dedupeAndRankSlots(slots, limit, settings.timezone);
 }
 
 function formatHourRange(start: number, end: number): string {
@@ -291,15 +291,26 @@ function technicianMatchesService(technician: TechnicianProfile, service: Servic
   return service.requiredSkills.every((skill) => technician.skills.includes(skill));
 }
 
-function dedupeAndRankSlots(slots: CandidateSlot[], limit: number): CandidateSlot[] {
+function compareScoreThenStart(a: CandidateSlot, b: CandidateSlot): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  return a.start.localeCompare(b.start);
+}
+
+function dayKeyInTimeZone(isoStart: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(isoStart));
+}
+
+function dedupeByTechStart(slots: CandidateSlot[]): CandidateSlot[] {
   const seen = new Set<string>();
   return slots
-    .sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      return a.start.localeCompare(b.start);
-    })
+    .sort(compareScoreThenStart)
     .filter((slot) => {
       const key = `${slot.technician}:${slot.start}`;
       if (seen.has(key)) {
@@ -307,8 +318,60 @@ function dedupeAndRankSlots(slots: CandidateSlot[], limit: number): CandidateSlo
       }
       seen.add(key);
       return true;
-    })
-    .slice(0, limit);
+    });
+}
+
+/**
+ * Picks the highest-scoring slot per calendar day (scheduling time zone) on distinct days first,
+ * in chronological day order, then backfills to `limit` from remaining candidates by score.
+ */
+function dedupeAndRankSlots(slots: CandidateSlot[], limit: number, timeZone: string): CandidateSlot[] {
+  if (limit <= 0) {
+    return [];
+  }
+  const unique = dedupeByTechStart(slots);
+  if (unique.length === 0) {
+    return [];
+  }
+
+  const byDay = new Map<string, CandidateSlot[]>();
+  for (const slot of unique) {
+    const k = dayKeyInTimeZone(slot.start, timeZone);
+    const list = byDay.get(k) ?? [];
+    list.push(slot);
+    byDay.set(k, list);
+  }
+  for (const list of byDay.values()) {
+    list.sort(compareScoreThenStart);
+  }
+
+  const dayKeys = [...byDay.keys()].sort();
+  const fromDistinctDays: CandidateSlot[] = [];
+  for (const k of dayKeys) {
+    const best = byDay.get(k)?.[0];
+    if (best) {
+      fromDistinctDays.push(best);
+    }
+  }
+
+  if (fromDistinctDays.length >= limit) {
+    return fromDistinctDays.slice(0, limit);
+  }
+
+  const chosen = new Set(fromDistinctDays.map((s) => `${s.technician}:${s.start}`));
+  const out = [...fromDistinctDays];
+  for (const slot of unique.sort(compareScoreThenStart)) {
+    if (out.length >= limit) {
+      break;
+    }
+    const key = `${slot.technician}:${slot.start}`;
+    if (chosen.has(key)) {
+      continue;
+    }
+    chosen.add(key);
+    out.push(slot);
+  }
+  return out.slice(0, limit);
 }
 
 function startingDriveMinutes(zipCode: string): number {
