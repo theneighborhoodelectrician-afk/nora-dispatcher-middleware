@@ -9,6 +9,7 @@ const settings: SchedulingSettings = {
   closingHour: 18,
   defaultSlotCount: 3,
   maxLookaheadDays: 3,
+  maxLookaheadTotalDays: 60,
   minLeadHours: 2,
   bufferMinutes: 30,
 };

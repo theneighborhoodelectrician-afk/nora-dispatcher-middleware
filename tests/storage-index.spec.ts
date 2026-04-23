@@ -11,6 +11,7 @@ const baseConfig: AppConfig = {
     closingHour: 18,
     defaultSlotCount: 3,
     maxLookaheadDays: 5,
+    maxLookaheadTotalDays: 60,
     minLeadHours: 2,
     bufferMinutes: 30,
   },

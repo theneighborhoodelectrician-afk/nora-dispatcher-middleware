@@ -123,11 +123,13 @@ export interface ConversationPresentation {
 
 export type AvailabilityStatus =
   | "slots_available"
-  | "human_escalation_required";
+  | "human_escalation_required"
+  | "no_availability";
 
 export type EscalationReason =
   | "emergency_keyword_detected"
   | "no_viable_availability"
+  | "no_availability"
   | "outside_service_area"
   | "after_hours_or_weekend";
 

@@ -19,7 +19,10 @@ export interface SchedulingSettings {
   openingHour: number;
   closingHour: number;
   defaultSlotCount: number;
+  /** First chunk of days to search when looking for open slots; extended in 7-day steps up to `maxLookaheadTotalDays`. */
   maxLookaheadDays: number;
+  /** Do not look further than this many days from “now” when extending availability. */
+  maxLookaheadTotalDays: number;
   minLeadHours: number;
   bufferMinutes: number;
 }

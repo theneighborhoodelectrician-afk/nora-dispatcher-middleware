@@ -1815,6 +1815,19 @@ async function enforceBookSmartGuards(
       }, timestamp);
     }
 
+    if (availability.status === "no_availability") {
+      const maxDays = config.scheduling.maxLookaheadTotalDays;
+      state.bookingStatus = "lead_submitted";
+      return submitLeadFromState(
+        storage,
+        state,
+        config,
+        sessionId,
+        timestamp,
+        `We don't have any openings in the next ${maxDays} days that match your request — that's unusual for us. I've passed your info to our team and they'll reach out within one business day to get you scheduled.`,
+      );
+    }
+
     // No bookable slots: set before submit so downstream logic (e.g. OpenAI on the same turn) sees a terminal lead state
     if (availability.status !== "slots_available" || availability.slots.length === 0) {
       state.bookingStatus = "lead_submitted";

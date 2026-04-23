@@ -67,6 +67,23 @@ export async function getAvailability(
     };
   }
 
+  if (decision.noAvailabilityExhausted) {
+    return {
+      success: false,
+      status: "no_availability",
+      message: "No openings within the full lookahead range that match routing rules.",
+      service: decision.service,
+      slots: [],
+      escalationReason: "no_availability",
+      diagnostics: decision.diagnostics,
+      presentation: buildAvailabilityPresentation({
+        status: "no_availability",
+        slots: [],
+        escalationReason: "no_availability",
+      }),
+    };
+  }
+
   if (!decision.slots.length) {
     return {
       success: false,
@@ -100,6 +117,9 @@ export async function getAvailability(
   };
 }
 
+const AVAILABILITY_EXTEND_DAYS = 7;
+const AVAILABILITY_CANDIDATE_CAP = 200;
+
 export async function evaluateAvailability(
   customerRequest: CustomerRequest,
   hcpClient: HousecallProClient,
@@ -111,6 +131,7 @@ export async function evaluateAvailability(
   allSlots: AvailabilityResponsePayload["slots"];
   diagnostics: NonNullable<AvailabilityResponsePayload["diagnostics"]>;
   bookingWindowClosed: boolean;
+  noAvailabilityExhausted: boolean;
 }> {
   const service = classifyService(customerRequest.requestedService);
   const intelligence = analyzeRequest(customerRequest, service);
@@ -123,6 +144,7 @@ export async function evaluateAvailability(
       slots: [],
       allSlots: [],
       bookingWindowClosed: true,
+      noAvailabilityExhausted: false,
       diagnostics: {
         requestZipCode: customerRequest.zipCode,
         requestCounty: detectCounty(customerRequest.zipCode),
@@ -135,25 +157,41 @@ export async function evaluateAvailability(
       },
     };
   }
-  const rangeEnd = new Date(
-    now.getTime() + config.scheduling.maxLookaheadDays * 24 * 60 * 60 * 1000,
-  );
+  const totalMax = config.scheduling.maxLookaheadTotalDays;
+  const initialWindow = Math.min(config.scheduling.maxLookaheadDays, totalMax);
+  const rangeEnd = new Date(now.getTime() + totalMax * 24 * 60 * 60 * 1000);
   const scheduledJobs = await hcpClient.fetchScheduledJobs(now.toISOString(), rangeEnd.toISOString());
-  const allSlots = buildCandidateSlots(
-    customerRequest,
-    service,
-    scheduledJobs,
-    config.scheduling,
-    now,
-    50,
-  );
-  const slots = allSlots.slice(0, config.scheduling.defaultSlotCount);
+
+  const scheduling = config.scheduling;
+  let windowDays = initialWindow;
+  let allSlots: AvailabilityResponsePayload["slots"] = [];
+  for (;;) {
+    allSlots = buildCandidateSlots(
+      customerRequest,
+      service,
+      scheduledJobs,
+      { ...scheduling, maxLookaheadDays: windowDays },
+      now,
+      AVAILABILITY_CANDIDATE_CAP,
+    );
+    if (allSlots.length >= scheduling.defaultSlotCount) {
+      break;
+    }
+    if (windowDays >= totalMax) {
+      break;
+    }
+    windowDays = Math.min(windowDays + AVAILABILITY_EXTEND_DAYS, totalMax);
+  }
+
+  const slots = allSlots.slice(0, scheduling.defaultSlotCount);
+  const noAvailabilityExhausted = allSlots.length === 0;
   return {
     service,
     intelligence,
     slots,
     allSlots,
     bookingWindowClosed: false,
+    noAvailabilityExhausted,
     diagnostics: {
       requestZipCode: customerRequest.zipCode,
       requestCounty: detectCounty(customerRequest.zipCode),

@@ -11,6 +11,12 @@ export function buildAvailabilityPresentation(input: {
   slots: CandidateSlot[];
   escalationReason?: EscalationReason;
 }): ConversationPresentation {
+  if (input.status === "no_availability") {
+    return {
+      replyText: escalationReply("no_availability"),
+      followUpPrompt: "Do not offer times. Offer to have someone follow up to schedule.",
+    };
+  }
   if (input.status === "slots_available") {
     const options = input.slots.slice(0, 3).map((slot) => ({
       label: slot.label,
@@ -74,6 +80,8 @@ function escalationReply(reason: EscalationReason | undefined): string {
       return "I'm having dispatch review this address and they will follow up with you directly.";
     case "after_hours_or_weekend":
       return "We typically schedule Monday through Friday. I've passed your info to our team and they'll reach out first thing to get you on the calendar.";
+    case "no_availability":
+      return "We don't have any openings in the current availability window that match this request. Someone will follow up to get you scheduled.";
     case "no_viable_availability":
     default:
       return "I'm having my dispatch manager look at the schedule right now to squeeze you in. They will call you in about 5 minutes.";
