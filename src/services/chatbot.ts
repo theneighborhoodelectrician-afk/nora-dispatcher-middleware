@@ -1038,6 +1038,10 @@ export async function handleChatMessage(
     }
     state.customer.preferredWindow = preferredWindow;
   }
+  const finalGuardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
+  if (finalGuardReply) {
+    return finalGuardReply;
+  }
   return submitLeadFromState(storage, state, config, sessionId, now);
 }
 
