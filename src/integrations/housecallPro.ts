@@ -150,11 +150,24 @@ export class HousecallProClient {
     const path =
       payload.target === "estimate" ? this.config.createEstimatePath : this.config.createJobPath;
 
+    const employeeIdMap: Record<string, string> = {
+      Nate: "pro_153120bc47f64ceaba850b0377303884",
+      Brandon: "pro_1ff90237b2164bf580fe071f0cf72e93",
+      Steve: "pro_10ad000c265e4bfe9dc2929918ec2da8",
+      Dave: "pro_cb8baab7ea27478d9529ed64f13d39a2",
+      Lou: "pro_a8d4ce5f9ea84238b3f725c34d390929",
+      Joseph: "pro_8c91c8d7193a4f51912e46493555f1ea",
+      Andrew: "pro_45c6e2bbc3ae4f62ba85aa13a6790e9c",
+      Brayden: "pro_cdf41554fb9249f5b0d0f7077cd2944e",
+    };
+    const assignedEmployeeId = employeeIdMap[payload.technician];
     const requestPayload = {
       customer_id: customerId,
-      scheduled_start: payload.start,
-      scheduled_end: payload.end,
-      assigned_employee_name: payload.technician,
+      schedule: {
+        scheduled_start: payload.start,
+        scheduled_end: payload.end,
+      },
+      assigned_employees: assignedEmployeeId ? [{ id: assignedEmployeeId }] : [],
       description: payload.serviceName,
       notes: payload.notes,
     };
@@ -292,7 +305,7 @@ export class HousecallProClient {
 
   private headers(): Record<string, string> {
     return {
-      authorization: `Bearer ${this.config.token}`,
+      authorization: `Token token="${this.config.token}"`,
       accept: "application/json",
       ...(this.config.companyId ? { "x-company-id": this.config.companyId } : {}),
     };
