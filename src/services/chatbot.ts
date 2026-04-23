@@ -153,6 +153,12 @@ export async function handleChatMessage(
     },
   });
 
+  // Check guards before letting OpenAI respond
+  const guardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
+  if (guardReply) {
+    return guardReply;
+  }
+
   const shouldUseOpenAi = shouldUseOpenAiConversationFlow(config, bookSmartConfig, state, messageText);
 
   if (shouldUseOpenAi) {
@@ -1302,11 +1308,6 @@ async function tryHandleChatMessageWithOpenAi(
         outputText: result.outputText,
       },
     });
-
-    const enforcedReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, timestamp);
-    if (enforcedReply) {
-      return enforcedReply;
-    }
 
     if (!result.outputText) {
       return undefined;
