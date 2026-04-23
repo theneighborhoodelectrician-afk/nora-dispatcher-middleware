@@ -36,6 +36,8 @@ export interface AppConfig {
   contact: {
     humanHandoffPhone?: string;
     humanHandoffHref?: string;
+    humanHandoffCallHref?: string;
+    humanHandoffSmsHref?: string;
   };
   scheduling: SchedulingSettings;
   openai: {
@@ -71,6 +73,11 @@ export interface AppConfig {
     postgresUrl?: string;
     autoInit: boolean;
   };
+  booking: {
+    hcpServiceLineId?: string;
+    hcpServiceLineName?: string;
+  };
+  leadOnlyLaunch: boolean;
 }
 
 export function getConfig(): AppConfig {
@@ -80,7 +87,9 @@ export function getConfig(): AppConfig {
     environment: process.env.NODE_ENV ?? "development",
     contact: {
       humanHandoffPhone,
-      humanHandoffHref: humanHandoffPhone ? toTelHref(humanHandoffPhone) : undefined,
+      humanHandoffHref: humanHandoffPhone ? toSmsHref(humanHandoffPhone) : undefined,
+      humanHandoffCallHref: humanHandoffPhone ? toTelHref(humanHandoffPhone) : undefined,
+      humanHandoffSmsHref: humanHandoffPhone ? toSmsHref(humanHandoffPhone) : undefined,
     },
     scheduling: {
       timezone: process.env.DEFAULT_TIMEZONE ?? "America/Detroit",
@@ -124,6 +133,11 @@ export function getConfig(): AppConfig {
       postgresUrl: process.env.POSTGRES_URL,
       autoInit: readBoolean("AUTO_INIT_STORAGE", true),
     },
+    booking: {
+      hcpServiceLineId: process.env.HCP_SERVICE_LINE_ID,
+      hcpServiceLineName: process.env.HCP_SERVICE_LINE_NAME,
+    },
+    leadOnlyLaunch: readBoolean("LEAD_ONLY_LAUNCH", false),
   };
 }
 
@@ -158,6 +172,10 @@ function normalizeDisplayPhone(value: string | undefined): string | undefined {
 
 function toTelHref(value: string): string {
   return `tel:+1${value.replace(/\D/g, "")}`;
+}
+
+function toSmsHref(value: string): string {
+  return `sms:+1${value.replace(/\D/g, "")}`;
 }
 
 function normalizeE164Phone(value: string | undefined): string | undefined {

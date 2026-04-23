@@ -266,6 +266,15 @@ export async function handleChatMessage(
 
   const shouldUseOpenAi = shouldUseOpenAiConversationFlow(config, bookSmartConfig, state, messageText);
 
+  // If conversation is already in a completed state, don't re-enter OpenAI
+  if (!isLeadOnlyLaunch(config) && (state.stage === "booked" || state.stage === "human_handoff") && !state.lastOfferedOptions?.length) {
+    if (state.stage === "booked") {
+      return persistReply(storage, state, { success: true, sessionId, replyText: "You're all set! Your appointment is confirmed.", stage: "booked" }, now);
+    } else {
+      return persistReply(storage, state, { success: true, sessionId, replyText: withHumanHandoffContact("I've connected you with our team. They'll be in touch soon.", config), stage: "human_handoff", handoffRequired: true }, now);
+    }
+  }
+
   if (shouldUseOpenAi) {
     const aiReply = await tryHandleChatMessageWithOpenAi(
       storage,
@@ -1614,7 +1623,12 @@ async function enforceBookSmartGuards(
   }
 
   if (isLeadOnlyLaunch(config) && shouldSubmitLead(state)) {
-    return submitLeadFromState(storage, state, config, sessionId, timestamp);
+    if (!config.booking.hcpServiceLineId && !config.booking.hcpServiceLineName) {
+      // Can't book in HCP without a service line — treat as a lead
+      return submitLeadFromState(storage, state, config, sessionId, timestamp);
+    }
+    // Has service line config — can attempt booking flow, fall through
+    return undefined;
   }
 
   if (
@@ -1814,8 +1828,8 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
   );
 }
 
-function isLeadOnlyLaunch(_config: AppConfig): boolean {
-  return false;
+function isLeadOnlyLaunch(config: AppConfig): boolean {
+  return config.leadOnlyLaunch;
 }
 
 function readStateUpdateArgs(args: unknown): Partial<CustomerRequest> {

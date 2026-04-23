@@ -36,6 +36,8 @@ const baseConfig: AppConfig = {
   storage: {
     autoInit: true,
   },
+  booking: {},
+  leadOnlyLaunch: false,
 };
 
 describe("storage index", () => {

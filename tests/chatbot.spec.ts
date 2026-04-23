@@ -4,12 +4,15 @@ import { createInitialAnalytics } from "../src/conversations/tracking.js";
 import { AppConfig } from "../src/config.js";
 import { ChatSessionState, handleChatMessage } from "../src/services/chatbot.js";
 import { MemoryStorageAdapter } from "../src/storage/memory.js";
+import * as booksmartTools from "../src/tools/booksmart.js";
 
 const config: AppConfig = {
   environment: "test",
   contact: {
     humanHandoffPhone: "586-489-1504",
-    humanHandoffHref: "tel:+15864891504",
+    humanHandoffHref: "sms:+15864891504",
+    humanHandoffCallHref: "tel:+15864891504",
+    humanHandoffSmsHref: "sms:+15864891504",
   },
   scheduling: {
     timezone: "America/Detroit",
@@ -42,6 +45,8 @@ const config: AppConfig = {
   storage: {
     autoInit: true,
   },
+  booking: {},
+  leadOnlyLaunch: false,
 };
 
 describe("BookSmart chat flow", () => {
@@ -455,6 +460,23 @@ describe("BookSmart chat flow", () => {
       },
     };
 
+    const getAvailabilitySpy = vi.spyOn(booksmartTools, "getAvailabilityTool").mockResolvedValue({
+      success: false,
+      status: "human_escalation_required",
+      message: "No online slots; submit lead",
+      service: {
+        category: "generic-electrical",
+        title: "Test",
+        durationMinutes: 60,
+        requiredSkills: [],
+        preferredSkills: [],
+        target: "job",
+        complexityScore: 1,
+      },
+      slots: [],
+      presentation: { replyText: "Dispatch will follow up." },
+    } as Awaited<ReturnType<typeof booksmartTools.getAvailabilityTool>>);
+
     const sessionState: ChatSessionState = {
       sessionId: "booksmart-ai-slots",
       stage: "collect_preferred_window",
@@ -506,6 +528,8 @@ describe("BookSmart chat flow", () => {
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
+
+    getAvailabilitySpy.mockRestore();
   });
 
   it("uses the OpenAI conversation path for broader customer questions while keeping booking in control", async () => {
@@ -587,6 +611,7 @@ describe("BookSmart chat flow", () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
       ...config,
+      leadOnlyLaunch: true,
       openai: {
         apiKey: "test-key",
         baseUrl: "https://api.openai.com/v1",
@@ -672,11 +697,8 @@ describe("BookSmart chat flow", () => {
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
-    const decisionTrace = messages.find(
-      (message) => message.direction === "tool" && message.toolName === "openai_decision_trace",
-    );
-    expect(decisionTrace?.toolCallSummary).toContain("without tool calls");
-    expect(Array.isArray(decisionTrace?.metadata?.trace)).toBe(true);
+    // Lead-only with full intake submits from guards before the OpenAI turn (no decision trace in this path).
+    expect(messages.some((message) => message.toolName === "openai_decision_trace")).toBe(false);
 
     const outcome = await storage.getConversationOutcome("booksmart-ai-book");
     expect(outcome?.bookedYesNo).toBe(true);

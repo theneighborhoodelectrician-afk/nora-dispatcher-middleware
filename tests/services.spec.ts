@@ -38,6 +38,8 @@ const config: AppConfig = {
   storage: {
     autoInit: true,
   },
+  booking: {},
+  leadOnlyLaunch: false,
 };
 
 const baseRequest: CustomerRequest = {
