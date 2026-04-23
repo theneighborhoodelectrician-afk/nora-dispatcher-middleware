@@ -252,6 +252,8 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
       return "contact_collected";
     case "collect_preferred_window":
       return state.analytics.photoRequested ? "photo_requested" : "contact_collected";
+    case "ready_for_availability":
+      return "contact_collected";
     case "lead_submitted":
       return "lead_submitted";
     case "offer_slots":
