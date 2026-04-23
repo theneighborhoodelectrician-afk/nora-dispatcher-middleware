@@ -31,12 +31,17 @@ export function checkServiceArea(
     };
   }
 
+  const isAllowed = config.serviceAreas.allowedCities.some(
+    (allowed) =>
+      allowed.includes(normalizedCity) ||
+      normalizedCity.includes(allowed) ||
+      levenshtein(allowed, normalizedCity) <= 2,
+  );
+
   return {
-    ok: config.serviceAreas.allowedCities.includes(normalizedCity),
+    ok: isAllowed,
     normalizedCity,
-    reason: config.serviceAreas.allowedCities.includes(normalizedCity)
-      ? undefined
-      : "outside_service_area",
+    reason: isAllowed ? undefined : "outside_service_area",
   };
 }
 
@@ -254,4 +259,22 @@ function joinOptionLabels(labels: string[]): string {
   }
 
   return `${labels[0]}, ${labels[1]}, or ${labels[2]}`;
+}
+
+function levenshtein(a: string, b: string): number {
+  const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]) as number[][];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i]![j] =
+        b[i - 1] === a[j - 1]
+          ? matrix[i - 1]![j - 1]!
+          : 1 + Math.min(
+            matrix[i - 1]![j - 1]!,
+            matrix[i - 1]![j]!,
+            matrix[i]![j - 1]!,
+          );
+    }
+  }
+  return matrix[b.length]![a.length]!;
 }
