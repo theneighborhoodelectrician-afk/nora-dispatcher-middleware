@@ -1815,6 +1815,11 @@ async function enforceBookSmartGuards(
       }, timestamp);
     }
 
+    // No bookable slots: set before submit so downstream logic (e.g. OpenAI on the same turn) sees a terminal lead state
+    if (availability.status !== "slots_available" || availability.slots.length === 0) {
+      state.bookingStatus = "lead_submitted";
+    }
+
     if (availability.escalationReason === "after_hours_or_weekend" && availability.presentation?.replyText) {
       return submitLeadFromState(
         storage,
