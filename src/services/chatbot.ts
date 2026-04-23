@@ -1725,7 +1725,7 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "collect_preferred_window";
   }
 
-  return "collect_preferred_window";
+  return "ready_for_availability";
 }
 
 function listMissingFields(state: ChatSessionState): string[] {
