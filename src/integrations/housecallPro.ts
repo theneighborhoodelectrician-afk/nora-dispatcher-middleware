@@ -48,24 +48,34 @@ export async function lookupCustomerByPhone(
   zipCode?: string;
   email?: string;
 }> {
+  console.log(`[HCP LOOKUP] searching phone: ${phone}`);
+
   if (!phone?.trim() || !config.token) {
-    return { found: false };
+    const result = { found: false as const };
+    console.log(`[HCP LOOKUP] result: ${JSON.stringify(result)}`);
+    return result;
   }
   try {
     const client = new HousecallProClient(config);
     const customer = await client.fetchCustomerByPhoneLookup(phone);
     if (!customer) {
-      return { found: false };
+      const result = { found: false as const };
+      console.log(`[HCP LOOKUP] result: ${JSON.stringify(result)}`);
+      return result;
     }
-    return {
-      found: true,
+    const result = {
+      found: true as const,
       firstName: customer.first_name,
       address: customer.address?.street,
       city: customer.address?.city,
       zipCode: customer.address?.zip,
       email: customer.email,
     };
-  } catch {
+    console.log(`[HCP LOOKUP] result: ${JSON.stringify(result)}`);
+    return result;
+  } catch (error) {
+    const result = { found: false as const, error: error instanceof Error ? error.message : String(error) };
+    console.log(`[HCP LOOKUP] result: ${JSON.stringify(result)}`);
     return { found: false };
   }
 }

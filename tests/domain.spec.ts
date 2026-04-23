@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { classifyService } from "../src/domain/serviceCatalog.js";
-import { buildCandidateSlots, SchedulingSettings } from "../src/domain/scheduling.js";
+import {
+  buildCandidateSlots,
+  SchedulingSettings,
+  technicianAcceptsServiceTarget,
+} from "../src/domain/scheduling.js";
 import { CustomerRequest, ScheduledJob } from "../src/domain/types.js";
 
 const settings: SchedulingSettings = {
@@ -103,6 +107,50 @@ describe("slot building", () => {
     );
 
     expect(slots).toHaveLength(0);
+  });
+
+  it("rejects estimate-only techs for job targets", () => {
+    expect(
+      technicianAcceptsServiceTarget(
+        {
+          name: "Nate",
+          seniorityRank: 1,
+          skills: ["residential"],
+          bookingTargets: ["estimate"],
+        },
+        "job",
+      ),
+    ).toBe(false);
+    expect(
+      technicianAcceptsServiceTarget(
+        {
+          name: "Nate",
+          seniorityRank: 1,
+          skills: ["residential"],
+          bookingTargets: ["estimate"],
+        },
+        "estimate",
+      ),
+    ).toBe(true);
+  });
+
+  it("never puts an estimate-only technician on job slots", () => {
+    const request: CustomerRequest = {
+      firstName: "Test",
+      phone: "555-111-2222",
+      zipCode: "48038",
+      requestedService: "Lights flickering in the kitchen",
+    };
+    const service = classifyService(request.requestedService);
+    expect(service.target).toBe("job");
+    const slots = buildCandidateSlots(
+      request,
+      service,
+      [],
+      settings,
+      new Date("2026-04-06T16:00:00.000Z"),
+    );
+    expect(slots.some((s) => s.technician === "Nate")).toBe(false);
   });
 
   it("includes Nate for estimate work only", () => {

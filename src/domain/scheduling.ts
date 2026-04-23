@@ -269,8 +269,23 @@ function pushBlockSlot(
   });
 }
 
+/**
+ * A technician with `bookingTargets` is only offered for services whose `target` is listed.
+ * Estimate-only techs (e.g. `bookingTargets: ["estimate"]`) are never used for `service.target === "job"`.
+ * Unrestricted techs omit `bookingTargets` and are eligible for any target their skills allow.
+ */
+export function technicianAcceptsServiceTarget(
+  technician: TechnicianProfile,
+  serviceTarget: ServiceProfile["target"],
+): boolean {
+  if (!technician.bookingTargets || technician.bookingTargets.length === 0) {
+    return true;
+  }
+  return technician.bookingTargets.includes(serviceTarget);
+}
+
 function technicianMatchesService(technician: TechnicianProfile, service: ServiceProfile): boolean {
-  if (technician.bookingTargets && !technician.bookingTargets.includes(service.target)) {
+  if (!technicianAcceptsServiceTarget(technician, service.target)) {
     return false;
   }
   return service.requiredSkills.every((skill) => technician.skills.includes(skill));

@@ -138,28 +138,62 @@ export async function getAvailabilityTool(
     return response;
   }
 
-  const filtered = response.slots.filter((slot) =>
-    matchesPreferredWindow(slot.start, customerRequest.preferredWindow!, runtimeConfig.scheduling.timezone),
-  );
-  const slots = filtered.length ? filtered.slice(0, runtimeConfig.scheduling.defaultSlotCount) : response.slots;
+  const tz = runtimeConfig.scheduling.timezone;
+  const n = runtimeConfig.scheduling.defaultSlotCount;
+  const prefer = customerRequest.preferredWindow;
+  const preferred = response.slots.filter((slot) => matchesPreferredWindow(slot.start, prefer, tz));
+  const other = response.slots.filter((slot) => !matchesPreferredWindow(slot.start, prefer, tz));
+  const slots = mergeSlotsPreferWindowFirst(preferred, other, n);
+  const labels = slots.map((s) => s.label);
+  const fullPreference = preferred.length >= n;
+  const hasSomePreference = preferred.length > 0;
+
+  const replyText = fullPreference
+    ? `I found ${joinOptionLabels(labels)} in the ${prefer}. Do any of those work for you?`
+    : hasSomePreference
+      ? `I had limited ${prefer} openings, so I included other same-week times so you have ${n} options: ${joinOptionLabels(
+          labels,
+        )}. Do any of those work?`
+      : (response.presentation?.replyText ?? `Here are the next available times. ${joinOptionLabels(labels)}.`);
 
   return {
     ...response,
     slots,
     presentation: {
       ...response.presentation,
-      options: slots.slice(0, runtimeConfig.scheduling.defaultSlotCount).map((slot) => ({
+      options: slots.map((slot) => ({
         label: slot.label,
         start: slot.start,
         end: slot.end,
         technician: slot.technician,
         bookingTarget: slot.bookingTarget,
       })),
-      replyText: filtered.length
-        ? `I found ${joinOptionLabels(slots.map((slot) => slot.label))} in the ${customerRequest.preferredWindow}. Do any of those work for you?`
-        : response.presentation.replyText,
+      replyText,
     },
   };
+}
+
+function mergeSlotsPreferWindowFirst<T extends { technician: string; start: string }>(
+  inPreferredWindow: T[],
+  otherSlots: T[],
+  count: number,
+): T[] {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const list of [inPreferredWindow, otherSlots]) {
+    for (const slot of list) {
+      if (out.length >= count) {
+        break;
+      }
+      const key = `${slot.technician}:${slot.start}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(slot);
+    }
+  }
+  return out;
 }
 
 export async function findOrCreateCustomerTool(
