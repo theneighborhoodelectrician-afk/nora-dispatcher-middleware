@@ -3,6 +3,7 @@ import handler from "../api/webhooks/chat.js";
 import { getConfig } from "../src/config.js";
 import { getStorageAdapter } from "../src/storage/index.js";
 import crypto from "node:crypto";
+import * as hcpIntegration from "../src/integrations/housecallPro.js";
 
 function createResponseRecorder() {
   const response = {
@@ -130,7 +131,7 @@ describe("chat webhook", () => {
 
     expect(lastPayload?.stage).toBe("lead_submitted");
     const replyLower = String(lastPayload?.replyText ?? "").toLowerCase();
-    expect(replyLower).toContain("confirm the exact appointment time");
+    expect(replyLower).toContain("follow up with the appointment time shortly");
 
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation(sessionId);
@@ -242,6 +243,52 @@ describe("chat webhook", () => {
     const payload = JSON.parse(res.body);
     expect(payload.sessionId).toBe("chat:5864891504:2488475527");
     expect(payload.replyText).toMatch(/first name|what’s going on/i);
+  });
+
+  it("only performs HCP returning-customer lookup on the first native message in a session", async () => {
+    const lookupSpy = vi.spyOn(hcpIntegration, "lookupCustomerByPhone");
+    const firstReq = {
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.received",
+        message_id: "blo-native-first-lookup",
+        external_id: "+15865550123",
+        protocol: "imessage",
+        timestamp: 1776998807002,
+        internal_id: "+12489990001",
+        is_group: false,
+        text: "hello",
+        sender: "+15865550123",
+        received_at: 1776998805782,
+      },
+    };
+    const secondReq = {
+      method: "POST",
+      headers: {},
+      body: {
+        event: "message.received",
+        message_id: "blo-native-second-lookup",
+        external_id: "+15865550123",
+        protocol: "imessage",
+        timestamp: 1776998810000,
+        internal_id: "+12489990001",
+        is_group: false,
+        text: "15 years maybe",
+        sender: "+15865550123",
+        received_at: 1776998809000,
+      },
+    };
+
+    const firstRes = createResponseRecorder();
+    await handler(firstReq as never, firstRes as never);
+    expect(firstRes.statusCode).toBe(200);
+
+    const secondRes = createResponseRecorder();
+    await handler(secondReq as never, secondRes as never);
+    expect(secondRes.statusCode).toBe(200);
+
+    expect(lookupSpy).toHaveBeenCalledTimes(1);
   });
 
   it("separates native Blooio sessions by customer phone instead of the business number", async () => {

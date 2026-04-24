@@ -145,18 +145,21 @@ export async function handleChatMessage(
 
   const now = Date.now();
   const leadSource = normalizeLeadSource(normalized.leadSource);
-  // HCP is keyed by phone; email-only (e.g. iMessage) sessions skip lookup and act as new customers.
-  const phoneForLookup = normalized.customer?.phone ?? normalized.contact?.phone;
-  const hcpLookup =
-    phoneForLookup && isLikelyPhoneForLookup(phoneForLookup)
-      ? await lookupCustomerByPhone(phoneForLookup, config.hcp)
-      : { found: false as const };
-
   const existing = await storage.getChatSession<ChatSessionState>(sessionId);
   const isBrandNewSession = !existing?.payload;
   const state = mergeState(existing?.payload, sessionId, normalized, messageText, now, leadSource);
 
-  if (hcpLookup?.found && isBrandNewSession) {
+  if (isBrandNewSession) {
+    // HCP is keyed by phone; email-only (e.g. iMessage) sessions skip lookup and act as new customers.
+    const phoneForLookup = normalized.customer?.phone ?? normalized.contact?.phone;
+    const hcpLookup =
+      phoneForLookup && isLikelyPhoneForLookup(phoneForLookup)
+        ? await lookupCustomerByPhone(phoneForLookup, config.hcp)
+        : { found: false as const };
+
+    if (!hcpLookup?.found) {
+      // No HCP match; continue as a normal new intake.
+    } else {
     state.hcpCustomerLookupTried = true;
     state.isReturningCustomer = true;
     if (hcpLookup.firstName) {
@@ -176,6 +179,7 @@ export async function handleChatMessage(
     }
     state.returningAddressAwaiting = true;
     state.stage = "confirm_returning_address";
+    }
   }
 
   if (isLeadOnlyLaunch(config)) {
@@ -322,7 +326,7 @@ export async function handleChatMessage(
         config,
         sessionId,
         now,
-        "I’m not locking in previously offered windows automatically anymore. I’ve sent this to scheduling, and we’ll confirm the exact appointment time from Housecall Pro before promising anything.",
+        "I’m not locking in that window over text. We’ll follow up with the appointment time shortly.",
       );
     }
   }
@@ -597,6 +601,14 @@ export async function handleChatMessage(
           success: true,
           sessionId,
           replyText: askForAddress(state),
+          stage: state.stage,
+        }, now);
+      }
+      if (!looksLikeAddressInput(messageText)) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: "what’s the street address?",
           stage: state.stage,
         }, now);
       }
@@ -1234,7 +1246,22 @@ function inferPreferredWindow(text: string): "morning" | "afternoon" | undefined
 }
 
 function looksLikeAddressInput(text: string): boolean {
-  return /\b\d{1,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,4}\b/i.test(text.trim());
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    /\b(year|years|yr|yrs|old|maybe)\b/i.test(normalized) &&
+    !/\b(st|street|rd|road|ave|avenue|dr|drive|blvd|boulevard|ln|lane|ct|court|cir|circle|way|trl|trail|pkwy|parkway|pl|place)\b/i.test(normalized)
+  ) {
+    return false;
+  }
+
+  return (
+    /\b\d{1,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\b/i.test(normalized) ||
+    /\b[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,5}\s+(st|street|rd|road|ave|avenue|dr|drive|blvd|boulevard|ln|lane|ct|court|cir|circle|way|trl|trail|pkwy|parkway|pl|place)\b/i.test(normalized)
+  );
 }
 
 function capitalize(value: string): string {
@@ -1344,6 +1371,9 @@ async function tryHandleChatMessageWithOpenAi(
     }
 
     state.stage = deriveStageFromState(state);
+    if (shouldSubmitLead(state) && state.bookingStatus !== "lead_submitted") {
+      return submitLeadFromState(storage, state, config, sessionId, timestamp);
+    }
     return persistReply(storage, state, {
       success: true,
       sessionId,
@@ -1683,7 +1713,7 @@ async function enforceBookSmartGuards(
       config,
       sessionId,
       timestamp,
-      "I’ve got everything I need. I’m sending this to scheduling now, and we’ll confirm the exact appointment time from Housecall Pro instead of promising a window that hasn’t been verified yet.",
+      "I’ve got what I need. We’ll follow up with the appointment time shortly.",
     );
   }
 
@@ -1711,6 +1741,7 @@ function buildOpenAiInput(
     latestCustomerMessage: latestMessage,
     stage: state.stage,
     missingFields: listMissingFields(state),
+    coreBookingInfoComplete: hasCoreBookingFields(state),
     bookingStatus: state.bookingStatus,
     customer: state.customer,
     serviceTypeId: state.serviceTypeId,
@@ -1851,6 +1882,18 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
   );
 }
 
+function hasCoreBookingFields(state: ChatSessionState): boolean {
+  return Boolean(
+    state.customer.requestedService &&
+    state.customer.address &&
+    state.customer.zipCode &&
+    state.customer.firstName &&
+    state.customer.phone &&
+    state.customer.email &&
+    state.customer.preferredWindow,
+  );
+}
+
 function isLeadOnlyLaunch(config: AppConfig): boolean {
   return config.leadOnlyLaunch;
 }
@@ -1879,7 +1922,7 @@ function applyStructuredConversationUpdates(
     state.customer.city = updates.city;
     applied.city = updates.city;
   }
-  if (updates.address && updates.address !== state.customer.address) {
+  if (updates.address && looksLikeAddressInput(updates.address) && updates.address !== state.customer.address) {
     state.customer.address = updates.address;
     applied.address = updates.address;
   }
@@ -2064,28 +2107,15 @@ function shouldUseOpenAiConversationFlow(
     return false;
   }
 
+  if (state.stage === "collect_job_notes" && hasCoreBookingFields(state)) {
+    return true;
+  }
+
   if (looksLikeStructuredReplyForCurrentStage(state, messageText, bookSmartConfig)) {
     return false;
   }
 
-  return true;
-}
-
-function shouldUseOpenAiStructuredFlow(
-  state: ChatSessionState,
-  messageText: string,
-): boolean {
-  return (
-    state.stage === "collect_preferred_window" ||
-    state.stage === "collect_job_notes" ||
-    state.stage === "offer_slots" ||
-    Boolean(extractEmailAddress(messageText)) ||
-    Boolean(extractPhoneNumber(messageText)) ||
-    Boolean(looksLikeAddressInput(messageText)) ||
-    Boolean(extractZipCode(messageText)) ||
-    (state.stage === "collect_zip" && Boolean(parseZipFromDedicatedMessage(messageText))) ||
-    Boolean(inferPreferredWindow(messageText))
-  );
+  return hasCoreBookingFields(state) || state.bookingStatus === "lead_submitted";
 }
 
 function withHumanHandoffContact(replyText: string, config: AppConfig): string {

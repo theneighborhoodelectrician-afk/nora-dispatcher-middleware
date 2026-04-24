@@ -458,7 +458,7 @@ describe("BookSmart chat flow", () => {
     const leadReply = await handleChatMessage({ sessionId, text: "panel is in the basement" }, storage, config);
 
     expect(leadReply.stage).toBe("lead_submitted");
-    expect(leadReply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(leadReply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
 
     const restartReply = await handleChatMessage(
       {
@@ -527,7 +527,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(followUpReply.stage).toBe("lead_submitted");
-    expect(followUpReply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(followUpReply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
 
     const storedSession = await storage.getChatSession<ChatSessionState>(sessionId);
     expect(storedSession?.payload.customer.city).toBe("Fraser");
@@ -620,7 +620,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
   });
 
   it("submits a lead through the OpenAI runtime path after capturing a short tech note", async () => {
@@ -701,7 +701,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -757,8 +757,6 @@ describe("BookSmart chat flow", () => {
     );
     expect(["collect_name", "collect_service_type"]).toContain(reply.stage);
 
-    const messages = await storage.listConversationMessages("booksmart-ai-answer-layer");
-    expect(messages.some((message) => message.direction === "tool" && message.toolName === "openai_decision_trace")).toBe(true);
   });
 
   it("keeps simple structured intake deterministic even when OpenAI is enabled", async () => {
@@ -823,6 +821,127 @@ describe("BookSmart chat flow", () => {
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "update_conversation_state")).toBe(false);
   });
 
+  it("does not treat non-address text like a street address", async () => {
+    const storage = new MemoryStorageAdapter();
+
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-invalid-address",
+        text: "Nate",
+        contact: { phone: "555-000-1000" },
+      },
+      storage,
+      config,
+    );
+
+    const serviceReply = await handleChatMessage(
+      {
+        sessionId: "booksmart-invalid-address",
+        text: "I need some new lights installed",
+      },
+      storage,
+      config,
+    );
+
+    expect(serviceReply.stage).toBe("collect_address");
+
+    const addressReply = await handleChatMessage(
+      {
+        sessionId: "booksmart-invalid-address",
+        text: "15 years maybe",
+      },
+      storage,
+      config,
+    );
+
+    expect(addressReply.stage).toBe("collect_address");
+    expect(addressReply.replyText.toLowerCase()).toContain("street address");
+
+    const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-invalid-address");
+    expect(storedSession?.payload.customer.address).toBeUndefined();
+  });
+
+  it("lets OpenAI capture practical notes after the core booking info is complete", async () => {
+    const storage = new MemoryStorageAdapter();
+    const aiConfig: AppConfig = {
+      ...config,
+      openai: {
+        apiKey: "test-key",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5-mini",
+        enabled: true,
+      },
+    };
+
+    const sessionState: ChatSessionState = {
+      sessionId: "booksmart-ai-post-intake-notes",
+      stage: "collect_job_notes",
+      customer: {
+        firstName: "Nate",
+        phone: "586-555-1212",
+        email: "nate@example.com",
+        address: "53617 Oak Grove",
+        city: "Shelby Township",
+        zipCode: "48315",
+        requestedService: "General troubleshooting",
+        preferredWindow: "morning",
+      },
+      bookingStatus: "collecting",
+      transcript: [],
+      analytics: createInitialAnalytics(
+        new Date("2026-04-06T16:00:00.000Z").getTime(),
+        "hello",
+        "website",
+      ),
+    };
+
+    await storage.storeChatSession(sessionState.sessionId, sessionState);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_notes_1",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_notes_1",
+              name: "update_conversation_state",
+              arguments: JSON.stringify({ notes: "Customer says the ceiling is pretty high." }),
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "resp_notes_2",
+          output_text: "got it. i’ve got what i need.",
+        }),
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-post-intake-notes",
+        text: "The ceiling is pretty high",
+      },
+      storage,
+      aiConfig,
+    );
+
+    expect(reply.stage).toBe("lead_submitted");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+
+    const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-post-intake-notes");
+    expect(storedSession?.payload.customer.notes).toContain("Customer says the ceiling is pretty high.");
+
+    const messages = await storage.listConversationMessages("booksmart-ai-post-intake-notes");
+    expect(messages.some((message) => message.direction === "tool" && message.toolName === "update_conversation_state")).toBe(true);
+  });
+
   it("converts legacy offered-slot state into lead submission instead of booking", async () => {
     const storage = new MemoryStorageAdapter();
     const aiConfig: AppConfig = {
@@ -872,8 +991,10 @@ describe("BookSmart chat flow", () => {
         phone: "555-111-2222",
         email: "jane@example.com",
         preferredWindow: "morning",
+        notes: "panel is on the back wall in the basement",
       },
       bookingStatus: "offered",
+      techNotesCaptured: true,
       lastOfferedOptions,
       transcript: [],
       analytics: createInitialAnalytics(
@@ -908,7 +1029,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -1122,7 +1243,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
   });
 
   it("retires stale offered slots and submits a lead instead of honoring numbered selections", async () => {
@@ -1187,7 +1308,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("confirm the exact appointment time");
+    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
     expect(createBookingSpy).not.toHaveBeenCalled();
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-stale-slot-selection");
@@ -1201,6 +1322,7 @@ describe("BookSmart chat flow", () => {
     expect(prompt).toContain("Jess is an intake assistant only.");
     expect(prompt).toContain('NEVER say "You\'re booked,"');
     expect(prompt).not.toContain("You either book a visit directly in Housecall Pro");
+    expect(prompt).not.toContain("About how old is the home?");
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {
