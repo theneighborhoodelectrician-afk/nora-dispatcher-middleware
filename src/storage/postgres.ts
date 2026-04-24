@@ -88,6 +88,10 @@ export class PostgresStorageAdapter implements StorageAdapter {
     );
   }
 
+  async deleteChatSession(sessionId: string): Promise<void> {
+    await this.pool.query(`delete from middleware_chat_sessions where session_id = $1`, [sessionId]);
+  }
+
   async getBookSmartConfig(): Promise<BookSmartConfig | undefined> {
     const result = await this.pool.query(
       `select payload

@@ -58,6 +58,10 @@ export class MemoryStorageAdapter implements StorageAdapter {
     });
   }
 
+  async deleteChatSession(sessionId: string): Promise<void> {
+    this.chatSessions.delete(sessionId);
+  }
+
   async getBookSmartConfig(): Promise<BookSmartConfig | undefined> {
     return this.bookSmartConfig;
   }

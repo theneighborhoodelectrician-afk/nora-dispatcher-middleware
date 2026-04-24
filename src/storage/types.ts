@@ -39,6 +39,7 @@ export interface StorageAdapter {
   logWebhookEvent(event: WebhookEventRecord): Promise<void>;
   getChatSession<T>(sessionId: string): Promise<ChatSessionRecord<T> | undefined>;
   storeChatSession<T>(sessionId: string, payload: T): Promise<void>;
+  deleteChatSession(sessionId: string): Promise<void>;
   getBookSmartConfig(): Promise<BookSmartConfig | undefined>;
   storeBookSmartConfig(config: BookSmartConfig): Promise<void>;
   upsertLeadSource(leadSource: LeadSourceRecord): Promise<void>;
