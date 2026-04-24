@@ -170,12 +170,12 @@ export class HousecallProClient {
 
   async fetchScheduledJobs(start: string, end: string): Promise<ScheduledJob[]> {
     if (!this.config.token) {
+      console.log("[HCP SCHEDULE] No token — returning empty");
       return [];
     }
 
     const pages = await this.fetchSchedulePages(start, end);
-
-    return pages
+    const jobs = pages
       .flatMap((body) => body.jobs ?? body.data ?? [])
       .map((job) => ({
         id: job.id,
@@ -188,12 +188,22 @@ export class HousecallProClient {
         title: job.description ?? job.invoice_number ?? "Scheduled job",
       }))
       .filter((job) => Boolean(job.technician && job.start && job.end && job.zipCode));
+
+    console.log(
+      "[HCP SCHEDULE] fetched:",
+      jobs.length,
+      "jobs",
+      jobs.map((j) => `${j.technician}:${j.start.slice(0, 10)}`),
+    );
+    return jobs;
   }
 
   async fetchSchedulePages(start: string, end: string): Promise<HousecallJobResponse[]> {
     if (!this.config.token) {
+      console.log("[HCP SCHEDULE] No token — skipping HCP fetch");
       return [];
     }
+    console.log("[HCP SCHEDULE] Fetching with token prefix:", this.config.token.slice(0, 8));
 
     return this.fetchPaginated<HousecallJobResponse>(this.config.schedulePath, {
       scheduled_start_min: start,

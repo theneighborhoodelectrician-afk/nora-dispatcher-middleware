@@ -15,6 +15,14 @@ function readNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function resolveDefaultTimezone(value: string | undefined): string {
+  const v = value?.trim();
+  if (!v || v === "UTC" || v === "America/New_York") {
+    return "America/Detroit";
+  }
+  return v;
+}
+
 function readBoolean(name: string, fallback: boolean): boolean {
   const value = process.env[name];
   if (!value) {
@@ -92,9 +100,9 @@ export function getConfig(): AppConfig {
       humanHandoffSmsHref: humanHandoffPhone ? toSmsHref(humanHandoffPhone) : undefined,
     },
     scheduling: {
-      timezone: process.env.DEFAULT_TIMEZONE ?? "America/Detroit",
-      openingHour: readNumber("OPENING_HOUR", 9),
-      closingHour: readNumber("CLOSING_HOUR", 18),
+      timezone: resolveDefaultTimezone(process.env.DEFAULT_TIMEZONE),
+      openingHour: readNumber("OPENING_HOUR", 8),
+      closingHour: readNumber("CLOSING_HOUR", 17),
       defaultSlotCount: readNumber("DEFAULT_SLOT_COUNT", 3),
       maxLookaheadDays: readNumber("INITIAL_LOOKAHEAD_DAYS", 7),
       maxLookaheadTotalDays: readNumber("MAX_LOOKAHEAD_DAYS", 60),

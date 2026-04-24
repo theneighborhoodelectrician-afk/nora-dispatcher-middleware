@@ -115,6 +115,11 @@ export async function getAvailabilityTool(
   runtimeConfig: AppConfig,
   config: BookSmartConfig = DEFAULT_BOOKSMART_CONFIG,
 ): Promise<Awaited<ReturnType<typeof getAvailability>>> {
+  console.log("[AVAILABILITY TOOL]", {
+    hasToken: Boolean(runtimeConfig.hcp?.token),
+    tokenPrefix: runtimeConfig.hcp?.token?.slice(0, 8),
+    schedulePath: runtimeConfig.hcp?.schedulePath,
+  });
   const adapter = new BookSmartHcpAdapter(runtimeConfig.hcp);
   const response = await getAvailability(customerRequest, adapter.rawClient, runtimeConfig);
 
