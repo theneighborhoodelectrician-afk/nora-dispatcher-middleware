@@ -309,6 +309,12 @@ export async function handleChatMessage(
   }
 
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
+    console.log("[SLOT SELECT]", {
+      messageText,
+      lastOfferedOptions: state.lastOfferedOptions?.map((o) => `${o.technician}:${o.label}`),
+      stage: state.stage,
+      bookingStatus: state.bookingStatus,
+    });
     const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
     if (selectedOption) {
       await recordSlotSelection(storage, state, selectedOption, now);
