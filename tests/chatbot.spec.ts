@@ -166,7 +166,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_address");
-    expect(reply.replyText.toLowerCase()).toContain("address?");
+    expect(reply.replyText.toLowerCase()).toContain("address");
   });
 
   it("answers a common question briefly and then pivots back to booking", async () => {
@@ -196,7 +196,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("macomb and oakland county");
-    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
+    expect(reply.replyText.toLowerCase()).toContain("what do you need help with");
   });
 
   it("recognizes a returning customer by phone and greets them by name", async () => {
@@ -275,7 +275,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(serviceReply.stage).toBe("collect_preferred_window");
-    expect(serviceReply.replyText.toLowerCase()).toContain("morning or afternoon");
+    expect(serviceReply.replyText.toLowerCase()).toContain("afternoon");
 
     const notesPrompt = await handleChatMessage(
       {
@@ -424,7 +424,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("collect_service_type");
     expect(reply.replyText.toLowerCase()).toContain("mast");
-    expect(reply.replyText.toLowerCase()).toContain("what’s going on?");
+    expect(reply.replyText.toLowerCase()).toContain("what do you need help with");
   });
 
   it("starts a fresh intake after a completed lead instead of reusing the closed session", async () => {
@@ -596,7 +596,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailReply.stage).toBe("collect_preferred_window");
-    expect(emailReply.replyText.toLowerCase()).toContain("morning or afternoon");
+    expect(emailReply.replyText.toLowerCase()).toContain("afternoon");
 
     const notesPrompt = await handleChatMessage(
       {
@@ -1546,7 +1546,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailPrompt.stage).toBe("collect_preferred_window");
-    expect(emailPrompt.replyText.toLowerCase()).toContain("morning or afternoon");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("afternoon");
 
     const session = await storage.getChatSession<ChatSessionState>("booksmart-chat-window");
     expect(session?.payload.customer.preferredWindow).toBeUndefined();
@@ -1577,6 +1577,35 @@ describe("BookSmart chat flow", () => {
     expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("patio");
     expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("dog");
     expect(stored?.payload.techNotesCaptured).toBe(true);
+  });
+
+  it("asks one more natural follow-up when the customer mentions another issue briefly", async () => {
+    const storage = new MemoryStorageAdapter();
+    const sessionId = "booksmart-related-work-follow-up";
+
+    await handleChatMessage({ sessionId, text: "hello", contact: { phone: "555-888-1111" } }, storage, config);
+    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
+    await handleChatMessage({ sessionId, text: "No grounds" }, storage, config);
+    await handleChatMessage({ sessionId, text: "53617 Oak Grove" }, storage, config);
+    await handleChatMessage({ sessionId, text: "48315" }, storage, config);
+    await handleChatMessage({ sessionId, text: "nate@nate.com" }, storage, config);
+    await handleChatMessage({ sessionId, text: "morning" }, storage, config);
+
+    const followUp = await handleChatMessage({ sessionId, text: "my panel" }, storage, config);
+
+    expect(followUp.stage).toBe("collect_job_notes");
+    expect(followUp.replyText.toLowerCase()).toContain("what’s going on with the panel");
+
+    const closeout = await handleChatMessage(
+      { sessionId, text: "just want it checked while you're there" },
+      storage,
+      config,
+    );
+
+    expect(closeout.stage).toBe("lead_submitted");
+    const stored = await storage.getChatSession<ChatSessionState>(sessionId);
+    expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("my panel");
+    expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("checked");
   });
 
   it("records urgency hits and handoff outcomes for urgent flows", async () => {

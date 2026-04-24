@@ -98,6 +98,8 @@ export interface ChatSessionState {
   returningAddressConfirmed?: boolean;
   /** We ask one final short prep question so the tech has useful notes before the lead is submitted. */
   techNotesCaptured?: boolean;
+  /** When the customer mentions another issue briefly, ask one more follow-up before closing. */
+  jobNotesFollowUpAsked?: boolean;
 }
 
 function isLikelyPhoneForLookup(value: string): boolean {
@@ -817,12 +819,35 @@ export async function handleChatMessage(
       }, now);
     }
 
-    state.techNotesCaptured = true;
-    if (!wantsToSkipJobNotes(messageText)) {
+    if (state.jobNotesFollowUpAsked) {
+      state.techNotesCaptured = true;
+      state.jobNotesFollowUpAsked = false;
+      if (!wantsToSkipJobNotes(messageText)) {
+        state.customer.bookSmartQualifiers = {
+          ...(state.customer.bookSmartQualifiers ?? {}),
+          relatedWork: appendCustomerNote(state.customer.bookSmartQualifiers?.relatedWork, messageText),
+        };
+      }
+    } else if (!wantsToSkipJobNotes(messageText) && shouldAskOneMoreRelatedWorkQuestion(messageText)) {
       state.customer.bookSmartQualifiers = {
         ...(state.customer.bookSmartQualifiers ?? {}),
         relatedWork: appendCustomerNote(state.customer.bookSmartQualifiers?.relatedWork, messageText),
       };
+      state.jobNotesFollowUpAsked = true;
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: buildRelatedWorkFollowUp(messageText),
+        stage: state.stage,
+      }, now);
+    } else {
+      state.techNotesCaptured = true;
+      if (!wantsToSkipJobNotes(messageText)) {
+        state.customer.bookSmartQualifiers = {
+          ...(state.customer.bookSmartQualifiers ?? {}),
+          relatedWork: appendCustomerNote(state.customer.bookSmartQualifiers?.relatedWork, messageText),
+        };
+      }
     }
   }
   const finalGuardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
@@ -2179,11 +2204,11 @@ function personalizeReply(state: ChatSessionState, message: string): string {
 }
 
 function askForServiceType(state: ChatSessionState): string {
-  return personalizeReply(state, "gotcha. what’s going on?");
+  return personalizeReply(state, "gotcha. what do you need help with?");
 }
 
 function askForAddress(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s the address?");
+  return personalizeReply(state, "what’s the address there?");
 }
 
 function askForZip(state: ChatSessionState): string {
@@ -2203,11 +2228,44 @@ function askForEmail(state: ChatSessionState): string {
 }
 
 function askForPreferredWindow(state: ChatSessionState): string {
-  return personalizeReply(state, "do you prefer morning or afternoon?");
+  return personalizeReply(state, "is morning better, or afternoon?");
 }
 
 function askForJobNotes(state: ChatSessionState): string {
-  return personalizeReply(state, "anything else you want us to take a look at while we're there?");
+  return personalizeReply(state, "while we're there, anything else you want us to take a look at?");
+}
+
+function shouldAskOneMoreRelatedWorkQuestion(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized || wantsToSkipJobNotes(normalized)) {
+    return false;
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length > 4) {
+    return false;
+  }
+
+  return /\b(panel|breaker|outlet|outlets|switch|switches|lights|lighting|fan|fans|charger|ev|service|mast)\b/.test(normalized);
+}
+
+function buildRelatedWorkFollowUp(text: string): string {
+  const normalized = text.trim().toLowerCase();
+
+  if (/\bpanel|breaker\b/.test(normalized)) {
+    return "got it. what’s going on with the panel?";
+  }
+  if (/\boutlet|outlets|switch|switches\b/.test(normalized)) {
+    return "got it. what’s going on with those?";
+  }
+  if (/\blights|lighting|fan|fans\b/.test(normalized)) {
+    return "got it. what do you want us to look at with that?";
+  }
+  if (/\bcharger|ev\b/.test(normalized)) {
+    return "got it. is that something you want checked out, or are you thinking about adding one?";
+  }
+
+  return "got it. what’s going on with that?";
 }
 
 function fallbackForUnhandledQuestion(config: AppConfig): string {
