@@ -413,6 +413,7 @@ export class HousecallProClient {
   }): Promise<string> {
     const existing = await this.findCustomer(customer);
     if (existing) {
+      await this.syncExistingCustomer(existing.id, customer);
       return existing.id;
     }
 
@@ -457,6 +458,57 @@ export class HousecallProClient {
     }
 
     return customerId;
+  }
+
+  private async syncExistingCustomer(
+    customerId: string,
+    customer: {
+      firstName: string;
+      lastName?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      city?: string;
+      zipCode: string;
+    },
+  ): Promise<void> {
+    if (!customer.email?.trim()) {
+      return;
+    }
+
+    const updateBody: Record<string, unknown> = {
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      address: {
+        street: customer.address,
+        city: customer.city,
+        zip: customer.zipCode,
+      },
+    };
+    if (customer.phone) {
+      updateBody.mobile_number = customer.phone;
+    }
+
+    const customerUrl = `${buildUrl(this.config.baseUrl, this.config.customerPath)}/${encodeURIComponent(customerId)}`;
+
+    for (const method of ["PATCH", "PUT"] as const) {
+      try {
+        const response = await fetch(customerUrl, {
+          ...this.requestInit(method, updateBody),
+        });
+        if (response.ok) {
+          return;
+        }
+      } catch {
+        // Best-effort sync only; do not block lead creation.
+      }
+    }
+
+    console.warn("[HCP CUSTOMER SYNC] unable to update existing customer email", {
+      customerId,
+      email: customer.email,
+    });
   }
 
   private headers(): Record<string, string> {
@@ -634,11 +686,15 @@ export class HousecallProClient {
 function buildLeadNote(payload: {
   serviceName: string;
   requestedWindow?: "morning" | "afternoon";
+  customer?: {
+    email?: string;
+  };
   notes?: string;
 }): string {
   return [
     `Service request: ${payload.serviceName}`,
     payload.requestedWindow ? `Preferred window: ${payload.requestedWindow}` : undefined,
+    payload.customer?.email ? `Email: ${payload.customer.email}` : undefined,
     payload.notes ? `Tech notes: ${payload.notes}` : undefined,
   ]
     .filter(Boolean)
