@@ -287,7 +287,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(notesPrompt.stage).toBe("collect_job_notes");
-    expect(notesPrompt.replyText.toLowerCase()).toContain("tech should know");
+    expect(notesPrompt.replyText.toLowerCase()).toContain("take a look");
 
     const storedSession = await storage.getChatSession<ChatSessionState>(sessionId);
     expect(storedSession?.payload.customer.firstName).toBe("Nate");
@@ -453,7 +453,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage({ sessionId, text: "nate@example.com" }, storage, config);
     const notesPrompt = await handleChatMessage({ sessionId, text: "morning" }, storage, config);
     expect(notesPrompt.stage).toBe("collect_job_notes");
-    expect(notesPrompt.replyText.toLowerCase()).toContain("tech should know");
+    expect(notesPrompt.replyText.toLowerCase()).toContain("take a look");
 
     const leadReply = await handleChatMessage({ sessionId, text: "panel is in the basement" }, storage, config);
 
@@ -608,7 +608,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(notesPrompt.stage).toBe("collect_job_notes");
-    expect(notesPrompt.replyText.toLowerCase()).toContain("tech should know");
+    expect(notesPrompt.replyText.toLowerCase()).toContain("take a look");
 
     const reply = await handleChatMessage(
       {
@@ -1231,7 +1231,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(notesPrompt.stage).toBe("collect_job_notes");
-    expect(notesPrompt.replyText.toLowerCase()).toContain("tech should know");
+    expect(notesPrompt.replyText.toLowerCase()).toContain("take a look");
 
     const reply = await handleChatMessage(
       {
@@ -1574,8 +1574,8 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     const stored = await storage.getChatSession<ChatSessionState>(sessionId);
-    expect(stored?.payload.customer.notes).toContain("patio");
-    expect(stored?.payload.customer.notes).toContain("dog");
+    expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("patio");
+    expect(stored?.payload.customer.bookSmartQualifiers?.relatedWork).toContain("dog");
     expect(stored?.payload.techNotesCaptured).toBe(true);
   });
 

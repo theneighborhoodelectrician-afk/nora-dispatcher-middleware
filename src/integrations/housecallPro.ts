@@ -27,9 +27,18 @@ export function buildBookSmartHcpJobNotes(payload: {
   if (q?.atticAccess) {
     lines.push(`Attic access: ${q.atticAccess}`);
   }
-  const freeform = [q?.customerNotes, payload.notes].filter(Boolean).join(" ").trim();
-  if (freeform) {
-    lines.push(`Customer notes: ${freeform}`);
+  if (q?.relatedWork) {
+    lines.push(`Also wants looked at: ${q.relatedWork}`);
+  }
+  if (q?.upgradeInterest) {
+    lines.push(`Possible upgrade interest: ${q.upgradeInterest}`);
+  }
+  if (q?.customerConcerns) {
+    lines.push(`Concerns/questions: ${q.customerConcerns}`);
+  }
+  const prepNotes = [q?.techPrepNotes, q?.customerNotes, payload.notes].filter(Boolean).join(" ").trim();
+  if (prepNotes) {
+    lines.push(`Tech prep notes: ${prepNotes}`);
   }
   if (lines.length === 1) {
     lines.push(`Service: ${payload.serviceName}`);
@@ -355,6 +364,7 @@ export class HousecallProClient {
       address?: string;
       city?: string;
       zipCode: string;
+      bookSmartQualifiers?: CustomerRequest["bookSmartQualifiers"];
     };
     serviceName: string;
     requestedWindow?: "morning" | "afternoon";
@@ -688,14 +698,20 @@ function buildLeadNote(payload: {
   requestedWindow?: "morning" | "afternoon";
   customer?: {
     email?: string;
+    bookSmartQualifiers?: CustomerRequest["bookSmartQualifiers"];
   };
   notes?: string;
 }): string {
+  const q = payload.customer?.bookSmartQualifiers;
+  const prepNotes = [q?.techPrepNotes, q?.customerNotes, payload.notes].filter(Boolean).join(" ").trim();
   return [
     `Service request: ${payload.serviceName}`,
     payload.requestedWindow ? `Preferred window: ${payload.requestedWindow}` : undefined,
     payload.customer?.email ? `Email: ${payload.customer.email}` : undefined,
-    payload.notes ? `Tech notes: ${payload.notes}` : undefined,
+    q?.relatedWork ? `Also wants looked at: ${q.relatedWork}` : undefined,
+    q?.upgradeInterest ? `Possible upgrade interest: ${q.upgradeInterest}` : undefined,
+    q?.customerConcerns ? `Concerns/questions: ${q.customerConcerns}` : undefined,
+    prepNotes ? `Tech prep notes: ${prepNotes}` : undefined,
   ]
     .filter(Boolean)
     .join("\n");

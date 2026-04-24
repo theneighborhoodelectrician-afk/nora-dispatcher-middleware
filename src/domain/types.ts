@@ -50,6 +50,10 @@ export interface BookSmartJobQualifiers {
   pets?: string;
   atticAccess?: string;
   customerNotes?: string;
+  relatedWork?: string;
+  upgradeInterest?: string;
+  customerConcerns?: string;
+  techPrepNotes?: string;
 }
 
 export interface CustomerRequest {

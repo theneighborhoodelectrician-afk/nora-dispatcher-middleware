@@ -225,6 +225,7 @@ export async function createLeadTool(
       address: customerRequest.address,
       city: customerRequest.city,
       zipCode: customerRequest.zipCode,
+      bookSmartQualifiers: customerRequest.bookSmartQualifiers,
     },
     serviceName: customerRequest.requestedService,
     requestedWindow: customerRequest.preferredWindow,

@@ -7,7 +7,7 @@ describe("HousecallProClient", () => {
     vi.unstubAllGlobals();
   });
 
-  it("includes the customer's email in the submitted lead note", async () => {
+  it("includes the customer's email and additional items in the submitted lead note", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ id: "lead_123" }),
@@ -33,6 +33,10 @@ describe("HousecallProClient", () => {
         address: "53617 Oak Grove",
         city: "Shelby Township",
         zipCode: "48315",
+        bookSmartQualifiers: {
+          relatedWork: "also wants two exterior outlets checked",
+          customerConcerns: "asked whether surge protection makes sense",
+        },
       },
       serviceName: "General troubleshooting",
       requestedWindow: "morning",
@@ -43,6 +47,15 @@ describe("HousecallProClient", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       customer_id: "cust_123",
       note: expect.stringContaining("Email: nate@example.com"),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      note: expect.stringContaining("Also wants looked at: also wants two exterior outlets checked"),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      note: expect.stringContaining("Concerns/questions: asked whether surge protection makes sense"),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      note: expect.stringContaining("Tech prep notes: The ceiling is pretty high"),
     });
   });
 

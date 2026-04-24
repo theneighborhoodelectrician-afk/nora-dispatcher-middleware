@@ -819,7 +819,10 @@ export async function handleChatMessage(
 
     state.techNotesCaptured = true;
     if (!wantsToSkipJobNotes(messageText)) {
-      state.customer.notes = appendCustomerNote(state.customer.notes, messageText);
+      state.customer.bookSmartQualifiers = {
+        ...(state.customer.bookSmartQualifiers ?? {}),
+        relatedWork: appendCustomerNote(state.customer.bookSmartQualifiers?.relatedWork, messageText),
+      };
     }
   }
   const finalGuardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
@@ -1416,6 +1419,10 @@ function createOpenAiTools(
             type: "string",
             enum: ["morning", "afternoon"],
           },
+          relatedWork: { type: "string" },
+          upgradeInterest: { type: "string" },
+          customerConcerns: { type: "string" },
+          techPrepNotes: { type: "string" },
           notes: { type: "string" },
         },
         additionalProperties: false,
@@ -1909,6 +1916,12 @@ function readStateUpdateArgs(args: unknown): Partial<CustomerRequest> {
     email: readStringArg(args, "email"),
     preferredWindow: readPreferredWindowArg(args, "preferredWindow"),
     notes: readStringArg(args, "notes"),
+    bookSmartQualifiers: {
+      relatedWork: readStringArg(args, "relatedWork"),
+      upgradeInterest: readStringArg(args, "upgradeInterest"),
+      customerConcerns: readStringArg(args, "customerConcerns"),
+      techPrepNotes: readStringArg(args, "techPrepNotes"),
+    },
   };
 }
 
@@ -1967,6 +1980,36 @@ function applyStructuredConversationUpdates(
       state.customer.notes = mergedNotes;
       state.techNotesCaptured = true;
       applied.notes = mergedNotes;
+    }
+  }
+  if (updates.bookSmartQualifiers) {
+    const currentQualifiers = state.customer.bookSmartQualifiers ?? {};
+    let nextQualifiers = currentQualifiers;
+    const qualifierEntries: Array<keyof NonNullable<CustomerRequest["bookSmartQualifiers"]>> = [
+      "relatedWork",
+      "upgradeInterest",
+      "customerConcerns",
+      "techPrepNotes",
+    ];
+
+    for (const key of qualifierEntries) {
+      const value = updates.bookSmartQualifiers[key];
+      if (!value) {
+        continue;
+      }
+      const mergedValue = appendCustomerNote(currentQualifiers[key], value);
+      if (mergedValue !== currentQualifiers[key]) {
+        nextQualifiers = {
+          ...nextQualifiers,
+          [key]: mergedValue,
+        };
+        applied[key] = mergedValue;
+      }
+    }
+
+    if (nextQualifiers !== currentQualifiers) {
+      state.customer.bookSmartQualifiers = nextQualifiers;
+      state.techNotesCaptured = true;
     }
   }
 
@@ -2164,7 +2207,7 @@ function askForPreferredWindow(state: ChatSessionState): string {
 }
 
 function askForJobNotes(state: ChatSessionState): string {
-  return personalizeReply(state, "anything else the tech should know before we come out?");
+  return personalizeReply(state, "anything else you want us to take a look at while we're there?");
 }
 
 function fallbackForUnhandledQuestion(config: AppConfig): string {

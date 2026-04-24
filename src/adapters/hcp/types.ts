@@ -28,6 +28,7 @@ export interface HcpCreateBookingInput {
 export interface HcpCreateLeadInput {
   customer: HcpFindOrCreateCustomerInput & {
     city?: string;
+    bookSmartQualifiers?: CustomerRequest["bookSmartQualifiers"];
   };
   serviceName: string;
   requestedWindow?: "morning" | "afternoon";
