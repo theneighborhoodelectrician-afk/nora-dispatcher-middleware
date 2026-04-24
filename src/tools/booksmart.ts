@@ -238,8 +238,8 @@ export async function createLeadTool(
     externalId: result.id,
     message: "Lead submitted.",
     presentation: {
-      replyText: "I’ve got what I need. We’ll follow up with the appointment time shortly.",
-      followUpPrompt: "Confirm that the request is in and we’ll follow up with the appointment time.",
+      replyText: "Perfect, I’ve got what I need. We’ll reach back out with the appointment time shortly.",
+      followUpPrompt: "Confirm that the request is in and we’ll reach back out with the appointment time.",
     },
   };
 }

@@ -458,7 +458,7 @@ describe("BookSmart chat flow", () => {
     const leadReply = await handleChatMessage({ sessionId, text: "panel is in the basement" }, storage, config);
 
     expect(leadReply.stage).toBe("lead_submitted");
-    expect(leadReply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(leadReply.replyText.toLowerCase()).toContain("appointment time shortly");
 
     const restartReply = await handleChatMessage(
       {
@@ -527,7 +527,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(followUpReply.stage).toBe("lead_submitted");
-    expect(followUpReply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(followUpReply.replyText.toLowerCase()).toContain("appointment time shortly");
 
     const storedSession = await storage.getChatSession<ChatSessionState>(sessionId);
     expect(storedSession?.payload.customer.city).toBe("Fraser");
@@ -620,7 +620,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
   });
 
   it("submits a lead through the OpenAI runtime path after capturing a short tech note", async () => {
@@ -701,7 +701,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
 
     const messages = await storage.listConversationMessages("booksmart-ai-slots");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -808,7 +808,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_email");
-    expect(reply.replyText.toLowerCase()).toContain("email?");
+    expect(reply.replyText.toLowerCase()).toContain("best email");
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-city");
     expect(storedSession?.payload.customer.city).toBe("Sterling Heights");
@@ -933,7 +933,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-ai-post-intake-notes");
     expect(storedSession?.payload.customer.notes).toContain("Customer says the ceiling is pretty high.");
@@ -1029,7 +1029,7 @@ describe("BookSmart chat flow", () => {
 
     expect(reply.stage).toBe("lead_submitted");
     expect(reply.leadId).toContain("lead-");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
 
     const messages = await storage.listConversationMessages("booksmart-ai-book");
     expect(messages.some((message) => message.direction === "tool" && message.toolName === "create_lead")).toBe(true);
@@ -1243,7 +1243,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
   });
 
   it("retires stale offered slots and submits a lead instead of honoring numbered selections", async () => {
@@ -1308,7 +1308,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("lead_submitted");
-    expect(reply.replyText.toLowerCase()).toContain("follow up with the appointment time shortly");
+    expect(reply.replyText.toLowerCase()).toContain("appointment time shortly");
     expect(createBookingSpy).not.toHaveBeenCalled();
 
     const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-stale-slot-selection");
@@ -1486,7 +1486,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(emailPrompt.stage).toBe("collect_email");
-    expect(emailPrompt.replyText.toLowerCase()).toContain("email?");
+    expect(emailPrompt.replyText.toLowerCase()).toContain("best email");
   });
 
   it("does not set a preferred window until the customer explicitly answers that question", async () => {

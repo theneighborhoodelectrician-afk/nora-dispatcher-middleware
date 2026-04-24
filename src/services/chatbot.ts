@@ -221,8 +221,8 @@ export async function handleChatMessage(
         success: true,
         sessionId,
         replyText: addr
-          ? `Hey ${first} - good to hear from you. Still at ${addr}?`
-          : `Hey ${first} - good to hear from you again. Is this still the best number for the job?`,
+          ? `Hey ${first} - good to hear from you. You still at ${addr}?`
+          : `Hey ${first} - good to hear from you again. Still the best number for this?`,
         stage: "confirm_returning_address",
       }, now);
     }
@@ -233,7 +233,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "Perfect - what can we help with this time?",
+        replyText: "Perfect. what can we help with this time?",
         stage: state.stage,
       }, now);
     }
@@ -247,7 +247,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "No problem—what’s the best street address and zip for this job?",
+        replyText: "No problem. what’s the street address and zip for this one?",
         stage: "collect_address",
       }, now);
     }
@@ -311,7 +311,7 @@ export async function handleChatMessage(
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "thanks—what’s going on with the electrical today?",
+      replyText: "thanks. what’s going on with the electrical?",
       stage: "collect_service_type",
     }, now);
   }
@@ -2128,35 +2128,39 @@ function withHumanHandoffContact(replyText: string, config: AppConfig): string {
 }
 
 function personalizeReply(state: ChatSessionState, message: string): string {
+  const firstName = state.customer.firstName?.trim();
+  if (firstName && !/[?!.]$/.test(message) && !/\b(?:you|your)\b/i.test(message)) {
+    return `${message} ${firstName}`;
+  }
   return message;
 }
 
 function askForServiceType(state: ChatSessionState): string {
-  return personalizeReply(state, "what’s going on?");
+  return personalizeReply(state, "gotcha. what’s going on?");
 }
 
 function askForAddress(state: ChatSessionState): string {
-  return personalizeReply(state, "address?");
+  return personalizeReply(state, "what’s the address?");
 }
 
 function askForZip(state: ChatSessionState): string {
-  return personalizeReply(state, "zip?");
+  return personalizeReply(state, "and what’s the zip?");
 }
 
 function askForFirstName(state: ChatSessionState): string {
-  return "name?";
+  return "what’s your first name?";
 }
 
 function askForPhone(state: ChatSessionState): string {
-  return personalizeReply(state, "best #?");
+  return personalizeReply(state, "what’s the best number for you?");
 }
 
 function askForEmail(state: ChatSessionState): string {
-  return personalizeReply(state, "email?");
+  return personalizeReply(state, "what’s the best email for you?");
 }
 
 function askForPreferredWindow(state: ChatSessionState): string {
-  return personalizeReply(state, "morning or afternoon?");
+  return personalizeReply(state, "do you prefer morning or afternoon?");
 }
 
 function askForJobNotes(state: ChatSessionState): string {
