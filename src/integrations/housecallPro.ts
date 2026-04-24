@@ -206,7 +206,7 @@ export class HousecallProClient {
     customer: {
       firstName: string;
       lastName?: string;
-      phone: string;
+      phone?: string;
       email?: string;
       address?: string;
       zipCode: string;
@@ -278,7 +278,7 @@ export class HousecallProClient {
     customer: {
       firstName: string;
       lastName?: string;
-      phone: string;
+      phone?: string;
       email?: string;
       address?: string;
       city?: string;
@@ -333,7 +333,7 @@ export class HousecallProClient {
   async findOrCreateCustomer(customer: {
     firstName: string;
     lastName?: string;
-    phone: string;
+    phone?: string;
     email?: string;
     address?: string;
     zipCode: string;
@@ -343,17 +343,21 @@ export class HousecallProClient {
       return existing.id;
     }
 
+    const createBody: Record<string, unknown> = {
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      address: {
+        street: customer.address,
+        zip: customer.zipCode,
+      },
+    };
+    if (customer.phone) {
+      createBody.mobile_number = customer.phone;
+    }
+
     const response = await fetch(buildUrl(this.config.baseUrl, this.config.customerPath), {
-      ...this.requestInit("POST", {
-        first_name: customer.firstName,
-        last_name: customer.lastName,
-        email: customer.email,
-        mobile_number: customer.phone,
-        address: {
-          street: customer.address,
-          zip: customer.zipCode,
-        },
-      }),
+      ...this.requestInit("POST", createBody),
     });
 
     if (!response.ok) {
@@ -512,14 +516,18 @@ export class HousecallProClient {
   private async findCustomer(customer: {
     firstName: string;
     lastName?: string;
-    phone: string;
+    phone?: string;
     email?: string;
     zipCode: string;
   }): Promise<{ id: string } | undefined> {
+    const searchQuery = (customer.phone ?? customer.email ?? "").trim();
+    if (!searchQuery) {
+      return undefined;
+    }
     const response = await fetch(
       buildUrl(this.config.baseUrl, this.config.customerPath, {
         page_size: "100",
-        search: customer.phone,
+        search: searchQuery,
       }),
       {
         headers: this.headers(),
@@ -535,7 +543,7 @@ export class HousecallProClient {
           status: response.status,
           url: buildUrl(this.config.baseUrl, this.config.customerPath, {
             page_size: "100",
-            search: customer.phone,
+            search: searchQuery,
           }),
           body: errorBody,
         },
@@ -615,18 +623,20 @@ function matchesCustomer(
     address?: { zip?: string };
   },
   customer: {
-    phone: string;
+    phone?: string;
     email?: string;
     zipCode: string;
   },
 ): boolean {
-  const normalizedPhone = normalizePhone(customer.phone);
-  const phones = [candidate.mobile_number, candidate.home_number]
-    .filter(Boolean)
-    .map((value) => normalizePhone(value!));
+  if (customer.phone) {
+    const normalizedPhone = normalizePhone(customer.phone);
+    const phones = [candidate.mobile_number, candidate.home_number]
+      .filter(Boolean)
+      .map((value) => normalizePhone(value!));
 
-  if (phones.includes(normalizedPhone)) {
-    return true;
+    if (phones.includes(normalizedPhone)) {
+      return true;
+    }
   }
 
   if (customer.email && candidate.email && customer.email.toLowerCase() === candidate.email.toLowerCase()) {

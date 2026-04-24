@@ -38,15 +38,24 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
   const externalId = stringValue(body.external_id);
   const sender = stringValue(body.sender);
   const internalId = stringValue(body.internal_id);
-  const contactPhone = stringValue(nestedContact.phone) ?? sender ?? externalId;
-  const customerPhone = stringValue(nestedCustomer.phone) ?? externalId ?? sender;
+  const channel = resolveChannelFromSenderOrExternalId(sender, externalId);
+  const nestedPhoneContact = stringValue(nestedContact.phone);
+  const nestedPhoneCustomer = stringValue(nestedCustomer.phone);
+  const nestedEmailContact = stringValue(nestedContact.email);
+  const nestedEmailCustomer = stringValue(nestedCustomer.email);
+  // Never put an email into phone fields. Phone comes from nested + channel only when it looks like a phone.
+  const contactPhone = nestedPhoneContact ?? (channel?.kind === "phone" ? channel.raw : undefined);
+  const customerPhone = nestedPhoneCustomer ?? (channel?.kind === "phone" ? channel.raw : undefined);
+  const fromChannelEmail = channel?.kind === "email" ? channel.email : undefined;
+  const contactEmail = nestedEmailContact ?? fromChannelEmail;
+  const customerEmail = nestedEmailCustomer ?? fromChannelEmail;
 
   return {
     sessionId:
       stringValue(body.sessionId) ??
       stringValue(body.conversationId) ??
       stringValue(body.threadId) ??
-      normalizeConversationSessionId(externalId ?? sender, internalId) ??
+      buildChatSessionId(sender, externalId, internalId) ??
       stringValue(nestedContact.id) ??
       normalizePhoneSessionId(contactPhone) ??
       normalizePhoneSessionId(customerPhone),
@@ -60,7 +69,7 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
       firstName: stringValue(nestedContact.firstName),
       lastName: stringValue(nestedContact.lastName),
       phone: contactPhone,
-      email: stringValue(nestedContact.email),
+      email: contactEmail,
       address1: stringValue(nestedContact.address1),
       city: stringValue(nestedContact.city),
       postalCode: stringValue(nestedContact.postalCode),
@@ -69,13 +78,67 @@ export function normalizeBlooioInboundPayload(body: Record<string, unknown>): No
       firstName: stringValue(nestedCustomer.firstName),
       lastName: stringValue(nestedCustomer.lastName),
       phone: customerPhone,
-      email: stringValue(nestedCustomer.email),
+      email: customerEmail,
       address: stringValue(nestedCustomer.address),
       city: stringValue(nestedCustomer.city),
       zipCode: stringValue(nestedCustomer.zipCode),
     },
     raw: body,
   };
+}
+
+type ChannelFromPayload =
+  | { kind: "phone"; raw: string; digits10: string }
+  | { kind: "email"; email: string };
+
+function resolveChannelFromSenderOrExternalId(
+  sender: string | undefined,
+  externalId: string | undefined,
+): ChannelFromPayload | undefined {
+  for (const raw of [stringValue(sender), stringValue(externalId)]) {
+    if (!raw) {
+      continue;
+    }
+    if (isLikelyChannelPhone(raw)) {
+      const d = normalizeToTenDigitPhone(raw);
+      if (d) {
+        return { kind: "phone", raw, digits10: d };
+      }
+    }
+    if (isLikelyChannelEmail(raw)) {
+      return { kind: "email", email: raw.trim() };
+    }
+  }
+  return undefined;
+}
+
+function isLikelyChannelPhone(value: string): boolean {
+  return value.replace(/\D/g, "").length >= 10;
+}
+
+function isLikelyChannelEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function buildChatSessionId(
+  sender: string | undefined,
+  externalId: string | undefined,
+  businessInternalId: string | undefined,
+): string | undefined {
+  const internalSegment = stringValue(businessInternalId);
+  if (!internalSegment) {
+    return undefined;
+  }
+  // Stable key: 10-digit US local part when the business id is phone-like, else literal (e.g. th-m1).
+  const inId = normalizeToTenDigitPhone(internalSegment) ?? internalSegment;
+  const ch = resolveChannelFromSenderOrExternalId(sender, externalId);
+  if (ch?.kind === "phone") {
+    return `chat:${ch.digits10}:${inId}`;
+  }
+  if (ch?.kind === "email") {
+    return `chat:${ch.email.toLowerCase()}:${inId}`;
+  }
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -118,28 +181,15 @@ function normalizePhoneSessionId(value: string | undefined): string | undefined 
     return undefined;
   }
 
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < 10) {
+  const d = normalizeToTenDigitPhone(value);
+  if (!d) {
     return undefined;
   }
 
-  return `phone:${digits.slice(-10)}`;
+  return `phone:${d}`;
 }
 
-function normalizeConversationSessionId(
-  customerValue: string | undefined,
-  businessValue: string | undefined,
-): string | undefined {
-  const customer = normalizePhoneDigits(customerValue);
-  if (!customer) {
-    return undefined;
-  }
-
-  const business = normalizePhoneDigits(businessValue);
-  return business ? `chat:${customer}:${business}` : `phone:${customer}`;
-}
-
-function normalizePhoneDigits(value: string | undefined): string | undefined {
+function normalizeToTenDigitPhone(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }

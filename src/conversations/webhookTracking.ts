@@ -14,10 +14,11 @@ export async function trackAvailabilityRequest(input: {
 }): Promise<void> {
   const leadSource = normalizeLeadSource(input.leadSource);
   const urgency = detectUrgency([input.request.requestedService, input.request.notes].filter(Boolean).join(" "));
+  const contactId = input.request.phone ?? input.request.email ?? input.conversationId;
 
   await input.storage.upsertLeadSource(defaultLeadSourceRecord(leadSource));
   await input.storage.upsertContact({
-    contactId: input.request.phone,
+    contactId,
     phone: input.request.phone,
     firstName: input.request.firstName,
     lastName: input.request.lastName,
@@ -29,7 +30,7 @@ export async function trackAvailabilityRequest(input: {
   });
   await input.storage.upsertConversation({
     conversationId: input.conversationId,
-    contactId: input.request.phone,
+    contactId,
     leadSource,
     timestampStarted: input.timestamp,
     timestampLastMessage: input.timestamp,
@@ -160,9 +161,10 @@ export async function trackBookingRequest(input: {
   timestamp: number;
 }): Promise<void> {
   const leadSource = normalizeLeadSource(input.leadSource);
+  const contactId = input.request.phone ?? input.request.email ?? input.conversationId;
   await input.storage.upsertLeadSource(defaultLeadSourceRecord(leadSource));
   await input.storage.upsertContact({
-    contactId: input.request.phone,
+    contactId,
     phone: input.request.phone,
     firstName: input.request.firstName,
     lastName: input.request.lastName,
@@ -174,7 +176,7 @@ export async function trackBookingRequest(input: {
   });
   await input.storage.upsertConversation({
     conversationId: input.conversationId,
-    contactId: input.request.phone,
+    contactId,
     leadSource,
     timestampStarted: input.timestamp,
     timestampLastMessage: input.timestamp,

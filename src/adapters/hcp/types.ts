@@ -8,7 +8,7 @@ export interface HcpAvailabilityInput {
 export interface HcpFindOrCreateCustomerInput {
   firstName: string;
   lastName?: string;
-  phone: string;
+  phone?: string;
   email?: string;
   address?: string;
   zipCode: string;

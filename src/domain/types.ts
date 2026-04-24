@@ -52,7 +52,8 @@ export interface BookSmartJobQualifiers {
 export interface CustomerRequest {
   firstName: string;
   lastName?: string;
-  phone: string;
+  /** Omitted e.g. for iMessage when the session is email-keyed; collect before booking when possible. */
+  phone?: string;
   email?: string;
   city?: string;
   address?: string;

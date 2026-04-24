@@ -98,6 +98,10 @@ export interface ChatSessionState {
   returningAddressConfirmed?: boolean;
 }
 
+function isLikelyPhoneForLookup(value: string): boolean {
+  return value.replace(/\D/g, "").length >= 10;
+}
+
 export interface ChatReplyPayload {
   success: boolean;
   sessionId: string;
@@ -120,9 +124,11 @@ export async function handleChatMessage(
   }
 
   const normalized = normalizeBlooioInboundPayload(parsed.data);
-  console.log("[PHONE DEBUG]", {
+  console.log("[BLOOIO SESSION]", {
     customerPhone: normalized.customer?.phone,
     contactPhone: normalized.contact?.phone,
+    customerEmail: normalized.customer?.email,
+    contactEmail: normalized.contact?.email,
     sessionId: normalized.sessionId,
   });
   const sessionId = normalized.sessionId;
@@ -137,10 +143,12 @@ export async function handleChatMessage(
 
   const now = Date.now();
   const leadSource = normalizeLeadSource(normalized.leadSource);
+  // HCP is keyed by phone; email-only (e.g. iMessage) sessions skip lookup and act as new customers.
   const phoneForLookup = normalized.customer?.phone ?? normalized.contact?.phone;
-  const hcpLookup = phoneForLookup
-    ? await lookupCustomerByPhone(phoneForLookup, config.hcp)
-    : { found: false as const };
+  const hcpLookup =
+    phoneForLookup && isLikelyPhoneForLookup(phoneForLookup)
+      ? await lookupCustomerByPhone(phoneForLookup, config.hcp)
+      : { found: false as const };
 
   const existing = await storage.getChatSession<ChatSessionState>(sessionId);
   const isBrandNewSession = !existing?.payload;
@@ -1070,11 +1078,11 @@ function setServiceDetails(
 }
 
 function toCustomerRequest(customer: Partial<CustomerRequest>): CustomerRequest {
-  if (!customer.requestedService || !customer.zipCode || !customer.phone) {
+  if (!customer.requestedService || !customer.zipCode) {
     throw new AppError(
       "Chat session missing required scheduling fields",
       400,
-      "I still need the service details, zip code, and phone number before I can check the schedule.",
+      "I still need the service details and zip code before I can check the schedule.",
     );
   }
 
