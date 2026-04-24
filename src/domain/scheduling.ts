@@ -285,6 +285,16 @@ export function technicianAcceptsServiceTarget(
 }
 
 function technicianMatchesService(technician: TechnicianProfile, service: ServiceProfile): boolean {
+  console.log(
+    "[TECH MATCH]",
+    technician.name,
+    "target:",
+    service.target,
+    "bookingTargets:",
+    technician.bookingTargets,
+    "accepts:",
+    technicianAcceptsServiceTarget(technician, service.target),
+  );
   if (!technicianAcceptsServiceTarget(technician, service.target)) {
     return false;
   }

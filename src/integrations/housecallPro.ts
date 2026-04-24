@@ -584,20 +584,32 @@ async function safeReadResponseText(response: Response): Promise<string> {
 }
 
 function normalizeTechnician(value: string | undefined): TechnicianName {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized?.includes("nate")) {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (normalized.includes("nate") || normalized.includes("anderson")) {
     return "Nate";
   }
-  if (normalized?.includes("steve")) {
-    return "Steve";
-  }
-  if (normalized?.includes("brandon")) {
+  if (normalized.includes("brandon") || normalized.includes("gerhardt")) {
     return "Brandon";
   }
-  if (normalized?.includes("dave")) {
+  if (normalized.includes("steve") || normalized.includes("hammer")) {
+    return "Steve";
+  }
+  if (normalized.includes("david") || normalized.includes("dave") || normalized.includes("gjonaj")) {
     return "Dave";
   }
-  return "Lou";
+  if (normalized.includes("lou") || normalized.includes("russo")) {
+    return "Lou";
+  }
+  if (normalized.includes("joseph") || normalized.includes("joe") || normalized.includes("sabatini")) {
+    return "Joseph";
+  }
+  if (normalized.includes("andrew") || normalized.includes("george")) {
+    return "Andrew";
+  }
+  if (normalized.includes("brayden") || normalized.includes("murfey")) {
+    return "Brayden";
+  }
+  return "Lou"; // default fallback
 }
 
 function employeeName(

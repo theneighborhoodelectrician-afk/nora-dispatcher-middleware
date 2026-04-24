@@ -5,7 +5,10 @@ export type TechnicianName =
   | "Steve"
   | "Brandon"
   | "Dave"
-  | "Lou";
+  | "Lou"
+  | "Joseph"
+  | "Andrew"
+  | "Brayden";
 
 export type SkillTag =
   | "senior"
