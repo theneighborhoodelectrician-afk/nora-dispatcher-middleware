@@ -165,6 +165,12 @@ export interface BookingResponsePayload {
   message: string;
   bookingTarget: BookingTarget;
   externalId?: string;
+  confirmedBooking?: {
+    technician?: TechnicianName;
+    start?: string;
+    end?: string;
+    exactMatch: boolean;
+  };
   alternatives?: CandidateSlot[];
   escalationReason?: EscalationReason;
   presentation: ConversationPresentation;

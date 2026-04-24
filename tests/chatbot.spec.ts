@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_BOOKSMART_CONFIG } from "../src/booksmart/defaultConfig.js";
 import { createInitialAnalytics } from "../src/conversations/tracking.js";
 import { AppConfig } from "../src/config.js";
+import { buildBookSmartSystemPrompt } from "../src/prompts/booksmartSystemPrompt.js";
 import { ChatSessionState, handleChatMessage } from "../src/services/chatbot.js";
 import { MemoryStorageAdapter } from "../src/storage/memory.js";
 import * as booksmartTools from "../src/tools/booksmart.js";
@@ -1002,6 +1003,146 @@ describe("BookSmart chat flow", () => {
     expect(reply.stage).toBe("offer_slots");
     expect(reply.replyText.toLowerCase()).toContain("next available");
     expect(reply.options?.length).toBeGreaterThan(0);
+  });
+
+  it("replaces stale offered slots with a fresh set before honoring a numbered selection", async () => {
+    const storage = new MemoryStorageAdapter();
+    const getAvailabilitySpy = vi.spyOn(booksmartTools, "getAvailabilityTool").mockResolvedValue({
+      success: true,
+      status: "slots_available",
+      message: "Fresh slots available",
+      service: {
+        category: "generic-electrical",
+        title: "Breaker issue",
+        durationMinutes: 60,
+        requiredSkills: [],
+        preferredSkills: [],
+        target: "job",
+        complexityScore: 1,
+      },
+      slots: [
+        {
+          label: "Thursday, April 9 at 9:00 AM",
+          start: "2026-04-09T13:00:00.000Z",
+          end: "2026-04-09T17:00:00.000Z",
+          technician: "Dave",
+          bookingTarget: "job",
+          driveMinutes: 0,
+          reason: "fresh-1",
+          score: 10,
+          serviceCategory: "generic-electrical",
+        },
+        {
+          label: "Friday, April 10 at 9:00 AM",
+          start: "2026-04-10T13:00:00.000Z",
+          end: "2026-04-10T17:00:00.000Z",
+          technician: "Steve",
+          bookingTarget: "job",
+          driveMinutes: 0,
+          reason: "fresh-2",
+          score: 9,
+          serviceCategory: "generic-electrical",
+        },
+        {
+          label: "Monday, April 13 at 1:00 PM",
+          start: "2026-04-13T17:00:00.000Z",
+          end: "2026-04-13T21:00:00.000Z",
+          technician: "Lou",
+          bookingTarget: "job",
+          driveMinutes: 0,
+          reason: "fresh-3",
+          score: 8,
+          serviceCategory: "generic-electrical",
+        },
+      ],
+      presentation: {
+        replyText: "Fresh slots",
+        options: [],
+      },
+    } as Awaited<ReturnType<typeof booksmartTools.getAvailabilityTool>>);
+    const createBookingSpy = vi.spyOn(booksmartTools, "createBookingTool");
+
+    const sessionState: ChatSessionState = {
+      sessionId: "booksmart-stale-slot-selection",
+      stage: "offer_slots",
+      customer: {
+        city: "Sterling Heights",
+        requestedService: "Breaker tripping",
+        address: "123 Main St",
+        zipCode: "48313",
+        firstName: "Jane",
+        phone: "555-111-2222",
+        email: "jane@example.com",
+        preferredWindow: "morning",
+      },
+      bookingStatus: "offered",
+      lastOfferedOptions: [
+        {
+          label: "Monday, April 6 at 9:00 AM",
+          start: "2026-04-06T13:00:00.000Z",
+          end: "2026-04-06T17:00:00.000Z",
+          technician: "Dave",
+          bookingTarget: "job",
+        },
+        {
+          label: "Tuesday, April 7 at 9:00 AM",
+          start: "2026-04-07T13:00:00.000Z",
+          end: "2026-04-07T17:00:00.000Z",
+          technician: "Steve",
+          bookingTarget: "job",
+        },
+        {
+          label: "Wednesday, April 8 at 1:00 PM",
+          start: "2026-04-08T17:00:00.000Z",
+          end: "2026-04-08T21:00:00.000Z",
+          technician: "Lou",
+          bookingTarget: "job",
+        },
+      ],
+      lastOfferedAt: new Date("2026-04-06T15:00:00.000Z").getTime(),
+      transcript: [],
+      analytics: createInitialAnalytics(
+        new Date("2026-04-06T16:00:00.000Z").getTime(),
+        "hello",
+        "website",
+      ),
+    };
+
+    await storage.storeChatSession(sessionState.sessionId, sessionState);
+
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-stale-slot-selection",
+        text: "2",
+      },
+      storage,
+      config,
+    );
+
+    expect(reply.stage).toBe("offer_slots");
+    expect(reply.replyText.toLowerCase()).toContain("latest openings");
+    expect(reply.options?.map((option) => option.label)).toEqual([
+      "Thursday, April 9 at 9:00 AM",
+      "Friday, April 10 at 9:00 AM",
+      "Monday, April 13 at 1:00 PM",
+    ]);
+    expect(createBookingSpy).not.toHaveBeenCalled();
+    expect(getAvailabilitySpy).toHaveBeenCalledOnce();
+
+    const storedSession = await storage.getChatSession<ChatSessionState>("booksmart-stale-slot-selection");
+    expect(storedSession?.payload.lastOfferedOptions?.map((option) => option.label)).toEqual([
+      "Thursday, April 9 at 9:00 AM",
+      "Friday, April 10 at 9:00 AM",
+      "Monday, April 13 at 1:00 PM",
+    ]);
+  });
+
+  it("keeps the OpenAI system prompt in intake-only mode for booking", () => {
+    const prompt = buildBookSmartSystemPrompt(DEFAULT_BOOKSMART_CONFIG);
+
+    expect(prompt).toContain("Jess is an intake assistant only.");
+    expect(prompt).toContain('NEVER say "You\'re booked,"');
+    expect(prompt).not.toContain("You either book a visit directly in Housecall Pro");
   });
 
   it("persists structured outcome, transcript, stage history, slot exposure, and lead source data", async () => {

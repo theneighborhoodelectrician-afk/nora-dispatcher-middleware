@@ -86,6 +86,7 @@ export interface ChatSessionState {
   serviceTypeId?: BookSmartServiceTypeId;
   urgency?: "normal" | "urgent";
   lastOfferedOptions?: PresentedSlotOption[];
+  lastOfferedAt?: number;
   transcript: ChatTranscriptEntry[];
   analytics: ChatAnalyticsState;
   isReturningCustomer?: boolean;
@@ -177,7 +178,7 @@ export async function handleChatMessage(
   }
 
   if (isLeadOnlyLaunch(config)) {
-    state.lastOfferedOptions = undefined;
+    clearOfferedSlots(state);
     if (state.bookingStatus === "offered") {
       state.bookingStatus = "collecting";
     }
@@ -315,27 +316,82 @@ export async function handleChatMessage(
       stage: state.stage,
       bookingStatus: state.bookingStatus,
     });
-    const selectedOption = matchOptionSelection(messageText, state.lastOfferedOptions);
-    if (selectedOption) {
-      await recordSlotSelection(storage, state, selectedOption, now);
+    const selectedIndex = matchOptionSelectionIndex(messageText, state.lastOfferedOptions);
+    if (selectedIndex !== undefined) {
+      const previouslyOfferedOptions = [...state.lastOfferedOptions];
+      const selectedOption = previouslyOfferedOptions[selectedIndex];
+
+      const customerRequest = toCustomerRequest(state.customer);
+      const freshAvailability = await getAvailabilityTool(customerRequest, config, bookSmartConfig);
+      const freshOptions = toPresentedSlotOptions(freshAvailability.slots);
+
+      if (freshAvailability.status !== "slots_available" || freshOptions.length !== 3) {
+        clearOfferedSlots(state);
+        state.stage = "human_handoff";
+        state.bookingStatus = "handoff";
+        state.analytics.lastHandoffReason = "booking_fallback";
+        await storage.appendHandoffEvent({
+          conversationId: state.sessionId,
+          reason: "fallback",
+          timestamp: now,
+          metadata: {
+            cause: "slot_refresh_failed",
+            availabilityStatus: freshAvailability.status,
+          },
+        });
+        await recordStageOnce(storage, state, "escalated", now, {
+          reason: "booking_fallback",
+        });
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: withHumanHandoffContact(
+            "I need to double-check the calendar before I lock that in. I’m pulling in a person now.",
+            config,
+          ),
+          stage: state.stage,
+          handoffRequired: true,
+        }, now);
+      }
+
+      if (!presentedOptionsMatch(previouslyOfferedOptions, freshOptions)) {
+        replaceOfferedSlots(state, freshOptions, now);
+        await recordSlotExposureSet(storage, state, state.lastOfferedOptions, now);
+        await recordStageOnce(storage, state, "availability_presented", now, {
+          slotCount: state.lastOfferedOptions.length,
+          refreshed: true,
+        });
+        const refreshedSlotList = state.lastOfferedOptions.map((option, index) => `${index + 1}. ${option.label}`).join("\n");
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText:
+            `Those times just changed, so here are the latest openings:\n${refreshedSlotList}\n\nReply with 1, 2, or 3 to confirm your appointment.`,
+          stage: state.stage,
+          options: state.lastOfferedOptions,
+        }, now);
+      }
+
+      const freshSelectedOption = freshOptions[selectedIndex];
+      await recordSlotSelection(storage, state, freshSelectedOption, now);
       await recordStageOnce(storage, state, "slot_selected", now, {
-        slotLabel: selectedOption.label,
+        slotLabel: freshSelectedOption.label,
       });
       await recordMessage(storage, {
         conversationId: state.sessionId,
         direction: "tool",
         timestamp: now,
         toolName: "create_booking",
-        toolCallSummary: `Booking requested for ${selectedOption.label}.`,
+        toolCallSummary: `Booking requested for ${freshSelectedOption.label}.`,
       });
       const booking = await createBookingTool(
-        toCustomerRequest(state.customer),
+        customerRequest,
         {
-          technician: selectedOption.technician,
-          start: selectedOption.start,
-          end: selectedOption.end,
-          bookingTarget: selectedOption.bookingTarget,
-          label: selectedOption.label,
+          technician: freshSelectedOption.technician,
+          start: freshSelectedOption.start,
+          end: freshSelectedOption.end,
+          bookingTarget: freshSelectedOption.bookingTarget,
+          label: freshSelectedOption.label,
           driveMinutes: 0,
           reason: "Selected in BookSmart chat",
           score: 0,
@@ -345,23 +401,26 @@ export async function handleChatMessage(
       );
 
       if (booking.status === "booked") {
+        clearOfferedSlots(state);
         state.stage = "booked";
         state.bookingStatus = "booked";
-        state.analytics.finalHcpJobType = selectedOption.bookingTarget;
+        state.analytics.finalHcpJobType = freshSelectedOption.bookingTarget;
         await storage.appendBookingEvent({
           conversationId: state.sessionId,
           bookingExternalId: booking.externalId,
-          finalHcpJobType: selectedOption.bookingTarget,
+          finalHcpJobType: freshSelectedOption.bookingTarget,
           bookingStatus: booking.status,
           timestamp: now,
           metadata: {
-            slotLabel: selectedOption.label,
+            slotLabel: freshSelectedOption.label,
           },
         });
         await recordStageOnce(storage, state, "booked", now, {
           bookingId: booking.externalId,
         });
-        const reply = `${booking.presentation.replyText} You’re booked for ${selectedOption.label}.`;
+        const reply = booking.confirmedBooking?.exactMatch === false
+          ? `${booking.presentation.replyText} I’m double-checking the exact arrival window in our calendar now and will only confirm what’s actually on the schedule.`
+          : `${booking.presentation.replyText} You’re booked for ${freshSelectedOption.label}.`;
         return persistReply(storage, state, {
           success: true,
           sessionId,
@@ -372,10 +431,7 @@ export async function handleChatMessage(
       }
 
       if (booking.presentation.options?.length) {
-        state.lastOfferedOptions = undefined; // clear stale options before setting new ones
-        state.lastOfferedOptions = booking.presentation.options;
-        state.stage = "offer_slots";
-        state.bookingStatus = "offered";
+        replaceOfferedSlots(state, booking.presentation.options.slice(0, 3), now);
         await recordSlotExposureSet(storage, state, state.lastOfferedOptions, now);
         await recordStageOnce(storage, state, "availability_presented", now, {
           slotCount: state.lastOfferedOptions?.length ?? 0,
@@ -389,12 +445,13 @@ export async function handleChatMessage(
         }, now);
       }
 
+      clearOfferedSlots(state);
       state.stage = "human_handoff";
       state.bookingStatus = "handoff";
       state.analytics.lastHandoffReason = "booking_fallback";
       await storage.appendBookingEvent({
         conversationId: state.sessionId,
-        finalHcpJobType: selectedOption.bookingTarget,
+        finalHcpJobType: freshSelectedOption.bookingTarget,
         bookingStatus: booking.status,
         timestamp: now,
       });
@@ -1023,7 +1080,7 @@ function mergeState(
   };
 
   if (!baseState) {
-    next.lastOfferedOptions = undefined;
+    clearOfferedSlots(next);
     next.bookingStatus = "collecting";
   }
 
@@ -1313,10 +1370,10 @@ function shouldHandOff(text: string): boolean {
   return /\b(human|person|manager|dispatcher|call me)\b/i.test(text);
 }
 
-function matchOptionSelection(
+function matchOptionSelectionIndex(
   text: string,
   options: PresentedSlotOption[],
-): PresentedSlotOption | undefined {
+): number | undefined {
   const normalized = text.toLowerCase();
   const ordinalMap: Array<{ pattern: RegExp; index: number }> = [
     { pattern: /\b(1|one|first|earliest)\b/, index: 0 },
@@ -1326,11 +1383,32 @@ function matchOptionSelection(
 
   for (const entry of ordinalMap) {
     if (entry.pattern.test(normalized)) {
-      return options[entry.index];
+      return options[entry.index] ? entry.index : undefined;
     }
   }
 
-  return options.find((option) => normalized.includes(option.label.toLowerCase()));
+  const matchedIndex = options.findIndex((option) => normalized.includes(option.label.toLowerCase()));
+  return matchedIndex >= 0 ? matchedIndex : undefined;
+}
+
+function presentedOptionsMatch(
+  previous: PresentedSlotOption[],
+  fresh: PresentedSlotOption[],
+): boolean {
+  if (previous.length !== fresh.length) {
+    return false;
+  }
+
+  return previous.every((option, index) => {
+    const candidate = fresh[index];
+    return (
+      candidate?.label === option.label &&
+      candidate?.start === option.start &&
+      candidate?.end === option.end &&
+      candidate?.technician === option.technician &&
+      candidate?.bookingTarget === option.bookingTarget
+    );
+  });
 }
 
 async function persistUrgencyHits(
@@ -1726,30 +1804,22 @@ async function enforceBookSmartGuards(
     const availability = await getAvailabilityTool(customerRequest, config, bookSmartConfig);
 
     if (availability.status === "slots_available" && availability.slots.length > 0) {
-      const options: PresentedSlotOption[] = availability.slots.map((slot) => ({
-        label: slot.label,
-        start: slot.start,
-        end: slot.end,
-        technician: slot.technician,
-        bookingTarget: slot.bookingTarget,
-      }));
-      state.lastOfferedOptions = undefined; // clear stale options before setting new ones
-      state.lastOfferedOptions = options;
-      state.stage = "offer_slots";
-      state.bookingStatus = "offered";
-      state.analytics.slotsShownCount += state.lastOfferedOptions.length;
-      await recordSlotExposureSet(storage, state, state.lastOfferedOptions, timestamp);
+      const options = toPresentedSlotOptions(availability.slots);
+      replaceOfferedSlots(state, options, timestamp);
+      const offeredOptions = state.lastOfferedOptions ?? [];
+      state.analytics.slotsShownCount += offeredOptions.length;
+      await recordSlotExposureSet(storage, state, offeredOptions, timestamp);
       await recordStageOnce(storage, state, "availability_presented", timestamp, {
-        slotCount: state.lastOfferedOptions.length,
+        slotCount: offeredOptions.length,
       });
-      const slotList = state.lastOfferedOptions.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
+      const slotList = offeredOptions.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
       const replyText = `Here are our next available times:\n${slotList}\n\nReply with 1, 2, or 3 to confirm your appointment.`;
       return persistReply(storage, state, {
         success: true,
         sessionId,
         replyText,
         stage: state.stage,
-        options: state.lastOfferedOptions,
+        options: offeredOptions,
       }, timestamp);
     }
 
@@ -1850,7 +1920,7 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "human_handoff";
   }
 
-  if (state.lastOfferedOptions?.length && state.bookingStatus === "offered") {
+  if (state.lastOfferedOptions?.length === 3 && state.bookingStatus === "offered") {
     return "offer_slots";
   }
 
@@ -2055,6 +2125,41 @@ function summarizeOpenAiDecisionTrace(toolCalls: string[]): string {
   }
 
   return `OpenAI used tools: ${toolCalls.join(", ")}.`;
+}
+
+function clearOfferedSlots(state: ChatSessionState): void {
+  state.lastOfferedOptions = undefined;
+  state.lastOfferedAt = undefined;
+}
+
+function replaceOfferedSlots(
+  state: ChatSessionState,
+  options: PresentedSlotOption[],
+  timestamp: number,
+): void {
+  clearOfferedSlots(state);
+  state.lastOfferedOptions = options.slice(0, 3);
+  state.lastOfferedAt = timestamp;
+  state.stage = "offer_slots";
+  state.bookingStatus = "offered";
+}
+
+function toPresentedSlotOptions(
+  slots: Array<{
+    label: string;
+    start: string;
+    end: string;
+    technician: PresentedSlotOption["technician"];
+    bookingTarget: PresentedSlotOption["bookingTarget"];
+  }>,
+): PresentedSlotOption[] {
+  return slots.slice(0, 3).map((slot) => ({
+    label: slot.label,
+    start: slot.start,
+    end: slot.end,
+    technician: slot.technician,
+    bookingTarget: slot.bookingTarget,
+  }));
 }
 
 function shouldUseOpenAiAnswerLayer(

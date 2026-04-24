@@ -93,6 +93,12 @@ export async function createBooking(
     message: `Booked successfully as a Housecall Pro ${service.target}.`,
     bookingTarget: service.target,
     externalId: result.id,
+    confirmedBooking: {
+      technician: result.technician,
+      start: result.start,
+      end: result.end,
+      exactMatch: result.exactMatch,
+    },
     presentation: buildBookingPresentation({
       status: "booked",
     }),

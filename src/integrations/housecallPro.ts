@@ -228,9 +228,15 @@ export class HousecallProClient {
     end: string;
     technician: string;
     target: "job" | "estimate";
-  }): Promise<{ id: string }> {
+  }): Promise<{ id: string; technician?: TechnicianName; start?: string; end?: string; exactMatch: boolean }> {
     if (!this.config.token) {
-      return { id: `mock-${payload.target}-${Date.now()}` };
+      return {
+        id: `mock-${payload.target}-${Date.now()}`,
+        technician: normalizeTechnician(payload.technician),
+        start: payload.start,
+        end: payload.end,
+        exactMatch: true,
+      };
     }
 
     const customerId = await this.findOrCreateCustomer(payload.customer);
@@ -281,7 +287,63 @@ export class HousecallProClient {
     }
 
     const body = await readJson<{ id?: string }>(response);
-    return { id: body.id ?? `hcp-${payload.target}-${Date.now()}` };
+    const id = body.id ?? `hcp-${payload.target}-${Date.now()}`;
+    const confirmed = await this.fetchCreatedBookingDetails(id, payload.target);
+
+    return {
+      id,
+      technician: confirmed?.technician,
+      start: confirmed?.start,
+      end: confirmed?.end,
+      exactMatch: Boolean(
+        confirmed?.technician === normalizeTechnician(payload.technician) &&
+        confirmed?.start === payload.start &&
+        confirmed?.end === payload.end,
+      ),
+    };
+  }
+
+  async fetchCreatedBookingDetails(
+    id: string,
+    target: "job" | "estimate",
+  ): Promise<{ technician?: TechnicianName; start?: string; end?: string } | undefined> {
+    if (!this.config.token) {
+      return undefined;
+    }
+
+    const pathBase = target === "estimate" ? this.config.createEstimatePath : this.config.createJobPath;
+    const path = `${pathBase.replace(/\/$/, "")}/${id}`;
+
+    try {
+      const response = await fetch(buildUrl(this.config.baseUrl, path), {
+        headers: this.headers(),
+      });
+      if (!response.ok) {
+        return undefined;
+      }
+
+      const body = await readJson<Record<string, unknown>>(response);
+      const record = extractJobLikeRecord(body);
+      if (!record) {
+        return undefined;
+      }
+
+      return {
+        technician: normalizeTechnician(
+          readNestedString(record, ["employee", "name"]) ??
+          employeeName(readNestedObject(record, ["assigned_employees", "0"])) ??
+          readNestedString(record, ["assigned_employee", "name"]),
+        ),
+        start:
+          readNestedString(record, ["start_time"]) ??
+          readNestedString(record, ["schedule", "scheduled_start"]),
+        end:
+          readNestedString(record, ["end_time"]) ??
+          readNestedString(record, ["schedule", "scheduled_end"]),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async createLead(payload: {
@@ -634,6 +696,69 @@ function employeeName(
     return undefined;
   }
   return [employee.first_name, employee.last_name].filter(Boolean).join(" ").trim() || undefined;
+}
+
+function extractJobLikeRecord(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (Array.isArray(body.jobs) && body.jobs[0] && typeof body.jobs[0] === "object") {
+    return body.jobs[0] as Record<string, unknown>;
+  }
+  if (Array.isArray(body.data) && body.data[0] && typeof body.data[0] === "object") {
+    return body.data[0] as Record<string, unknown>;
+  }
+  if (body.job && typeof body.job === "object") {
+    return body.job as Record<string, unknown>;
+  }
+  if (body.estimate && typeof body.estimate === "object") {
+    return body.estimate as Record<string, unknown>;
+  }
+  if (body.id && typeof body.id === "string") {
+    return body;
+  }
+  return undefined;
+}
+
+function readNestedString(
+  record: Record<string, unknown>,
+  path: string[],
+): string | undefined {
+  let current: unknown = record;
+  for (const key of path) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    if (Array.isArray(current)) {
+      current = current[Number(key)];
+      continue;
+    }
+    if (typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current.trim() ? current : undefined;
+}
+
+function readNestedObject(
+  record: Record<string, unknown>,
+  path: string[],
+): { first_name?: string; last_name?: string } | undefined {
+  let current: unknown = record;
+  for (const key of path) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    if (Array.isArray(current)) {
+      current = current[Number(key)];
+      continue;
+    }
+    if (typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current && typeof current === "object"
+    ? (current as { first_name?: string; last_name?: string })
+    : undefined;
 }
 
 function matchesCustomer(

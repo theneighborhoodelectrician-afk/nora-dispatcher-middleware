@@ -175,8 +175,7 @@ function formatHourRange(start: number, end: number): string {
  * (JS convention for day-of-week is 0=Sunday, 6=Saturday; this uses tz-local calendar days.)
  */
 function isWeekendInTimeZone(now: Date, dayOffset: number, timeZone: string): boolean {
-  const t = new Date(now);
-  t.setDate(t.getDate() + dayOffset);
+  const t = zonedDateAtHour(now, dayOffset, 12, timeZone);
   const dtf = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" });
   const long = dtf.format(t);
   if (long === "Saturday" || long === "Sunday") {
@@ -188,23 +187,24 @@ function isWeekendInTimeZone(now: Date, dayOffset: number, timeZone: string): bo
 }
 
 function buildDayPartLabel(now: Date, dayOffset: number, timeZone: string): string {
-  if (dayOffset === 0) {
+  const targetDate = zonedDateAtHour(now, dayOffset, 12, timeZone);
+  const targetParts = getDatePartsInTimeZone(targetDate, timeZone);
+  const todayParts = getDatePartsInTimeZone(now, timeZone);
+  const tomorrowParts = getDatePartsInTimeZone(zonedDateAtHour(now, 1, 12, timeZone), timeZone);
+
+  if (sameDateParts(targetParts, todayParts)) {
     return "Today";
   }
-  if (dayOffset === 1) {
+  if (sameDateParts(targetParts, tomorrowParts)) {
     return "Tomorrow";
   }
-  const t = new Date(now);
-  t.setDate(t.getDate() + dayOffset);
-  return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(t);
+
+  return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(targetDate);
 }
 
-/** Approximate America/Detroit wall time as UTC by shifting from plain local date (see legacy startOfBusinessDay). */
-function startOfZonedDayHour(now: Date, dayOffset: number, hour: number, _timeZone: string): Date {
-  const date = new Date(now);
-  date.setUTCDate(date.getUTCDate() + dayOffset);
-  date.setUTCHours(hour + 4, 0, 0, 0);
-  return date;
+function startOfZonedDayHour(now: Date, dayOffset: number, hour: number, timeZone: string): Date {
+  const targetDay = addZonedDays(getDatePartsInTimeZone(now, timeZone), dayOffset);
+  return zonedTimeToUtc(targetDay.year, targetDay.month, targetDay.day, hour, 0, 0, timeZone);
 }
 
 function fitsBetweenJobs(
@@ -231,7 +231,95 @@ function fitsBetweenJobs(
 }
 
 function sameDateLocal(iso: string, dayStart: Date): boolean {
-  return new Date(iso).toDateString() === dayStart.toDateString();
+  return (
+    new Date(iso).getUTCFullYear() === dayStart.getUTCFullYear() &&
+    new Date(iso).getUTCMonth() === dayStart.getUTCMonth() &&
+    new Date(iso).getUTCDate() === dayStart.getUTCDate()
+  );
+}
+
+function zonedDateAtHour(now: Date, dayOffset: number, hour: number, timeZone: string): Date {
+  const targetDay = addZonedDays(getDatePartsInTimeZone(now, timeZone), dayOffset);
+  return zonedTimeToUtc(targetDay.year, targetDay.month, targetDay.day, hour, 0, 0, timeZone);
+}
+
+function addZonedDays(
+  parts: { year: number; month: number; day: number },
+  dayOffset: number,
+): { year: number; month: number; day: number } {
+  const utcMidnight = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + dayOffset));
+  return {
+    year: utcMidnight.getUTCFullYear(),
+    month: utcMidnight.getUTCMonth() + 1,
+    day: utcMidnight.getUTCDate(),
+  };
+}
+
+function getDatePartsInTimeZone(
+  date: Date,
+  timeZone: string,
+): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value ?? "0"),
+    month: Number(parts.find((part) => part.type === "month")?.value ?? "0"),
+    day: Number(parts.find((part) => part.type === "day")?.value ?? "0"),
+  };
+}
+
+function sameDateParts(
+  left: { year: number; month: number; day: number },
+  right: { year: number; month: number; day: number },
+): boolean {
+  return left.year === right.year && left.month === right.month && left.day === right.day;
+}
+
+function zonedTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+): Date {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+  let offset = getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+  let corrected = utcGuess - offset;
+  const secondOffset = getTimeZoneOffsetMs(new Date(corrected), timeZone);
+  if (secondOffset !== offset) {
+    offset = secondOffset;
+    corrected = utcGuess - offset;
+  }
+  return new Date(corrected);
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? "0");
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? "0");
+  const day = Number(parts.find((part) => part.type === "day")?.value ?? "0");
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
+  const second = Number(parts.find((part) => part.type === "second")?.value ?? "0");
+
+  return Date.UTC(year, month - 1, day, hour, minute, second) - date.getTime();
 }
 
 function pushBlockSlot(

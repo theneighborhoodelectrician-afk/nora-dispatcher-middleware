@@ -43,6 +43,7 @@ describe("admin HCP booking smoke test API", () => {
   it("attempts a real create through the HCP client on POST", async () => {
     const createSpy = vi.spyOn(HousecallProClient.prototype, "createBooking").mockResolvedValue({
       id: "job_smoke_123",
+      exactMatch: true,
     });
     const res = createResponseRecorder();
 

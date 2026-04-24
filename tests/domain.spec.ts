@@ -201,4 +201,34 @@ describe("slot building", () => {
     expect(slots.some((slot) => slot.technician === "Nate")).toBe(true);
     expect(slots.every((slot) => slot.bookingTarget === "estimate")).toBe(true);
   });
+
+  it("does not label Saturday slots as Today on a Friday evening boundary", () => {
+    const request: CustomerRequest = {
+      firstName: "Test",
+      phone: "555-111-2222",
+      zipCode: "48315",
+      requestedService: "Outlet or switch issue",
+    };
+
+    const service = classifyService(request.requestedService);
+    const boundarySettings = { ...settings, maxLookaheadDays: 5 };
+    // Friday, November 6, 2026 at 8:30 PM in America/Detroit.
+    const slots = buildCandidateSlots(
+      request,
+      service,
+      [],
+      boundarySettings,
+      new Date("2026-11-07T01:30:00.000Z"),
+    );
+
+    expect(slots).toHaveLength(3);
+    expect(slots[0]?.label).toBe("Monday — Morning (9–12)");
+    expect(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: boundarySettings.timezone,
+        weekday: "long",
+      }).format(new Date(slots[0]!.start)),
+    ).toBe("Monday");
+    expect(slots.some((slot) => /Today|Saturday|Sunday/.test(slot.label))).toBe(false);
+  });
 });
