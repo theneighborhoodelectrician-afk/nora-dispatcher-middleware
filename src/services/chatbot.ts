@@ -678,7 +678,6 @@ export async function handleChatMessage(
         }, now);
       }
       state.customer.address = messageText;
-      state.customer.zipCode = state.customer.zipCode ?? extractZipCode(messageText);
       if (!state.customer.zipCode) {
         state.stage = "collect_zip";
         return persistReply(storage, state, {
@@ -724,7 +723,7 @@ export async function handleChatMessage(
   }
 
   if (!state.customer.zipCode) {
-    const zip = extractZipCode(messageText);
+    const zip = parseZipFromDedicatedMessage(messageText);
     state.stage = "collect_zip";
     if (!zip) {
       return persistReply(storage, state, {
@@ -1233,9 +1232,26 @@ function normalizeText(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
+/**
+ * A 5-digit group inside arbitrary text, only if it is a service-area ZIP.
+ * Prevents misreading a street number (e.g. 53617) as a ZIP.
+ */
 function extractZipCode(text: string): string | undefined {
   const m = text.match(/\b(\d{5})(?:-\d{4})?\b/);
-  return m ? m[1] : undefined;
+  if (!m) {
+    return undefined;
+  }
+  const z = m[1];
+  return isValidServiceZip(z) ? z : undefined;
+}
+
+/** Any 5+ digit run from the user’s reply when we are in collect_zip (out-of-area allowed). */
+function parseZipFromDedicatedMessage(text: string): string | undefined {
+  const digits = text.replace(/\D/g, "");
+  if (digits.length < 5) {
+    return undefined;
+  }
+  return digits.slice(0, 5);
 }
 
 function extractPhoneNumber(text: string): string | undefined {
@@ -2083,6 +2099,7 @@ function shouldUseOpenAiStructuredFlow(
     Boolean(extractPhoneNumber(messageText)) ||
     Boolean(looksLikeAddressInput(messageText)) ||
     Boolean(extractZipCode(messageText)) ||
+    (state.stage === "collect_zip" && Boolean(parseZipFromDedicatedMessage(messageText))) ||
     Boolean(inferPreferredWindow(messageText))
   );
 }
@@ -2169,7 +2186,7 @@ function looksLikeStructuredReplyForCurrentStage(
     case "collect_address":
       return looksLikeAddressInput(text);
     case "collect_zip":
-      return Boolean(extractZipCode(text));
+      return Boolean(parseZipFromDedicatedMessage(text));
     case "collect_name":
       return looksLikeNameInput(text);
     case "collect_phone":

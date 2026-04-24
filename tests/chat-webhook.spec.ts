@@ -83,22 +83,18 @@ describe("chat webhook", () => {
       },
       {
         messageId: "blooio-msg-3",
-        text: "Sterling Heights",
+        text: "123 Main St, Sterling Heights",
       },
       {
         messageId: "blooio-msg-4",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "48313",
       },
       {
         messageId: "blooio-msg-5",
-        text: "Jane",
-      },
-      {
-        messageId: "blooio-msg-6",
         text: "jane@example.com",
       },
       {
-        messageId: "blooio-msg-7",
+        messageId: "blooio-msg-6",
         text: "Afternoon works best",
       },
     ];

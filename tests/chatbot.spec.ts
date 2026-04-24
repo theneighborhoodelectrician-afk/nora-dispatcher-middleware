@@ -342,10 +342,11 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
     await handleChatMessage({ sessionId, text: "I need a panel upgrade" }, storage, config);
     await handleChatMessage(
-      { sessionId, text: "Oak Grove Dr, Shelby Charter Township, MI 48315" },
+      { sessionId, text: "Oak Grove Dr, Shelby Charter Township" },
       storage,
       config,
     );
+    await handleChatMessage({ sessionId, text: "48315" }, storage, config);
     await handleChatMessage({ sessionId, text: "nate@example.com" }, storage, config);
     const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, config);
 
@@ -396,10 +397,11 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage({ sessionId, text: "Brad" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "flickering lights" }, storage, aiConfig);
     await handleChatMessage(
-      { sessionId, text: "N Garfield Ave, Fraser, MI 48026" },
+      { sessionId, text: "N Garfield Ave, Fraser" },
       storage,
       aiConfig,
     );
+    await handleChatMessage({ sessionId, text: "48026" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "Brad Mumma" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "brad@example.com" }, storage, aiConfig);
     const leadReply = await handleChatMessage({ sessionId, text: "morning" }, storage, aiConfig);
@@ -430,7 +432,7 @@ describe("BookSmart chat flow", () => {
 
     const storedSession = await storage.getChatSession<ChatSessionState>(sessionId);
     expect(storedSession?.payload.customer.city).toBe("Fraser");
-    expect(storedSession?.payload.customer.address).toBe("N Garfield Ave, Fraser, MI 48026");
+    expect(storedSession?.payload.customer.address).toBe("N Garfield Ave, Fraser");
     expect(storedSession?.payload.customer.zipCode).toBe("48026");
     expect(storedSession?.payload.bookingStatus).toBe("offered");
   });
@@ -471,7 +473,15 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "123 Main St, Sterling Heights",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-slots",
+        text: "48313",
       },
       storage,
       config,
@@ -671,10 +681,18 @@ describe("BookSmart chat flow", () => {
       aiConfig,
     );
 
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-ai-city",
+        text: "10 Main St, Sterling Heights",
+      },
+      storage,
+      aiConfig,
+    );
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-ai-city",
-        text: "10 Main St, Sterling Heights, MI 48314",
+        text: "48314",
       },
       storage,
       aiConfig,
@@ -850,10 +868,18 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-area",
+        text: "100 Gratiot Ave, Detroit",
+      },
+      storage,
+      config,
+    );
     const reply = await handleChatMessage(
       {
         sessionId: "booksmart-chat-area",
-        text: "100 Gratiot Ave, Detroit, MI 48201",
+        text: "48201",
       },
       storage,
       config,
@@ -943,7 +969,15 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "123 Main St, Sterling Heights",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-book",
+        text: "48313",
       },
       storage,
       config,
@@ -1008,7 +1042,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-4",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "123 Main St, Sterling Heights",
       },
       storage,
       config,
@@ -1017,7 +1051,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-5",
-        text: "jane@example.com",
+        text: "48313",
       },
       storage,
       config,
@@ -1026,6 +1060,15 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-6",
+        text: "jane@example.com",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-analytics-book",
+        messageId: "msg-7",
         text: "morning",
       },
       storage,
@@ -1094,10 +1137,18 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-email",
+        text: "123 Main St, Sterling Heights",
+      },
+      storage,
+      config,
+    );
     const emailPrompt = await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
-        text: "123 Main St, Sterling Heights, MI 48313",
+        text: "48313",
       },
       storage,
       config,
@@ -1140,7 +1191,15 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-window",
-        text: "Oak Grove Dr, Shelby Charter Township, MI 48315",
+        text: "Oak Grove Dr, Shelby Charter Township",
+      },
+      storage,
+      config,
+    );
+    await handleChatMessage(
+      {
+        sessionId: "booksmart-chat-window",
+        text: "48315",
       },
       storage,
       config,
