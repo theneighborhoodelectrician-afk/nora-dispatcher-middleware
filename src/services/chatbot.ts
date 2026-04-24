@@ -366,12 +366,13 @@ export async function handleChatMessage(
       }
 
       if (booking.presentation.options?.length) {
+        state.lastOfferedOptions = undefined; // clear stale options before setting new ones
         state.lastOfferedOptions = booking.presentation.options;
         state.stage = "offer_slots";
         state.bookingStatus = "offered";
-        await recordSlotExposureSet(storage, state, booking.presentation.options, now);
+        await recordSlotExposureSet(storage, state, state.lastOfferedOptions, now);
         await recordStageOnce(storage, state, "availability_presented", now, {
-          slotCount: booking.presentation.options.length,
+          slotCount: state.lastOfferedOptions?.length ?? 0,
         });
         return persistReply(storage, state, {
           success: true,
@@ -1014,6 +1015,11 @@ function mergeState(
     transcript: [],
     analytics: createInitialAnalytics(timestamp, messageText, leadSource),
   };
+
+  if (!baseState) {
+    next.lastOfferedOptions = undefined;
+    next.bookingStatus = "collecting";
+  }
 
   next.customer.phone = normalized.customer?.phone ?? normalized.contact?.phone ?? next.customer.phone;
   next.customer.email = normalized.customer?.email ?? normalized.contact?.email ?? next.customer.email;
@@ -1721,20 +1727,23 @@ async function enforceBookSmartGuards(
         technician: slot.technician,
         bookingTarget: slot.bookingTarget,
       }));
+      state.lastOfferedOptions = undefined; // clear stale options before setting new ones
       state.lastOfferedOptions = options;
       state.stage = "offer_slots";
       state.bookingStatus = "offered";
-      state.analytics.slotsShownCount += options.length;
-      await recordSlotExposureSet(storage, state, options, timestamp);
-      await recordStageOnce(storage, state, "availability_presented", timestamp, { slotCount: options.length });
-      const slotList = options.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
+      state.analytics.slotsShownCount += state.lastOfferedOptions.length;
+      await recordSlotExposureSet(storage, state, state.lastOfferedOptions, timestamp);
+      await recordStageOnce(storage, state, "availability_presented", timestamp, {
+        slotCount: state.lastOfferedOptions.length,
+      });
+      const slotList = state.lastOfferedOptions.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
       const replyText = `Here are our next available times:\n${slotList}\n\nReply with 1, 2, or 3 to confirm your appointment.`;
       return persistReply(storage, state, {
         success: true,
         sessionId,
         replyText,
         stage: state.stage,
-        options,
+        options: state.lastOfferedOptions,
       }, timestamp);
     }
 
