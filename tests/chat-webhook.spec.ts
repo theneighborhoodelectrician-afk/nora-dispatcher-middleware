@@ -97,6 +97,10 @@ describe("chat webhook", () => {
         messageId: "blooio-msg-6",
         text: "Afternoon works best",
       },
+      {
+        messageId: "blooio-msg-7",
+        text: "charger will be in the attached garage",
+      },
     ];
 
     let lastPayload: Record<string, unknown> | undefined;
@@ -124,10 +128,9 @@ describe("chat webhook", () => {
       }
     }
 
-    expect(lastPayload?.stage).toBe("offer_slots");
+    expect(lastPayload?.stage).toBe("lead_submitted");
     const replyLower = String(lastPayload?.replyText ?? "").toLowerCase();
-    expect(replyLower).toContain("next available");
-    expect(replyLower).toMatch(/1, 2, or 3/);
+    expect(replyLower).toContain("confirm the exact appointment time");
 
     const storage = getStorageAdapter(getConfig());
     const conversation = await storage.getConversation(sessionId);
@@ -136,9 +139,9 @@ describe("chat webhook", () => {
     const leadSource = await storage.getLeadSource("blooio");
 
     expect(conversation?.leadSource).toBe("blooio");
-    expect(outcome?.finalBookingStatus).toBe("offered");
-    expect(outcome?.bookedYesNo).toBe(false);
-    expect(bookingEvents).toHaveLength(0);
+    expect(outcome?.finalBookingStatus).toBe("lead_submitted");
+    expect(outcome?.bookedYesNo).toBe(true);
+    expect(bookingEvents).toHaveLength(1);
     expect(leadSource?.code).toBe("blooio");
   });
 

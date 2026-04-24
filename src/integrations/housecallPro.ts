@@ -408,6 +408,7 @@ export class HousecallProClient {
     phone?: string;
     email?: string;
     address?: string;
+    city?: string;
     zipCode: string;
   }): Promise<string> {
     const existing = await this.findCustomer(customer);
@@ -421,6 +422,7 @@ export class HousecallProClient {
       email: customer.email,
       address: {
         street: customer.address,
+        city: customer.city,
         zip: customer.zipCode,
       },
     };
@@ -637,7 +639,7 @@ function buildLeadNote(payload: {
   return [
     `Service request: ${payload.serviceName}`,
     payload.requestedWindow ? `Preferred window: ${payload.requestedWindow}` : undefined,
-    payload.notes,
+    payload.notes ? `Tech notes: ${payload.notes}` : undefined,
   ]
     .filter(Boolean)
     .join("\n");

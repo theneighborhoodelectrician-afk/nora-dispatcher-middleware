@@ -196,6 +196,7 @@ export async function findOrCreateCustomerTool(
     phone: customer.phone,
     email: customer.email,
     address: customer.address,
+    city: customer.city,
     zipCode: customer.zipCode,
   });
 }
@@ -237,9 +238,8 @@ export async function createLeadTool(
     externalId: result.id,
     message: "Lead submitted.",
     presentation: {
-      replyText: runtimeConfig.contact.humanHandoffPhone
-        ? `I'll get it on the calendar ASAP. If you need me now call ${runtimeConfig.contact.humanHandoffPhone}.`
-        : "I'll get it on the calendar ASAP.",
+      replyText:
+        "I’ve got everything I need. I’m sending this to scheduling now, and we’ll confirm the exact appointment time from Housecall Pro before promising anything.",
       followUpPrompt:
         "Confirm that the request is in and the team will follow up with the appointment time.",
     },

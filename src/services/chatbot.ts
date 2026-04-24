@@ -29,10 +29,8 @@ import { StorageAdapter } from "../storage/types.js";
 import {
   checkServiceArea,
   classifyServiceType,
-  createBookingTool,
   createLeadTool,
   detectUrgency,
-  getAvailabilityTool,
   getServiceTypeById,
   handoffToHuman,
   requestPhoto,
@@ -49,6 +47,7 @@ type ChatStage =
   | "collect_phone"
   | "collect_email"
   | "collect_preferred_window"
+  | "collect_job_notes"
   | "confirm_returning_address"
   | "ready_for_availability"
   | "lead_submitted"
@@ -97,6 +96,8 @@ export interface ChatSessionState {
   returningAddressAwaiting?: boolean;
   /** HCP prefill: address is still good (yes). */
   returningAddressConfirmed?: boolean;
+  /** We ask one final short prep question so the tech has useful notes before the lead is submitted. */
+  techNotesCaptured?: boolean;
 }
 
 function isLikelyPhoneForLookup(value: string): boolean {
@@ -211,11 +212,13 @@ export async function handleChatMessage(
       state.returningGreetingSent = true;
       state.stage = "confirm_returning_address";
       const first = state.customer.firstName ?? "there";
-      const addr = state.customer.address ?? "this address";
+      const addr = state.customer.address;
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: `Hey ${first}! Great to hear from you. Are you still at ${addr}?`,
+        replyText: addr
+          ? `Hey ${first} - good to hear from you. Still at ${addr}?`
+          : `Hey ${first} - good to hear from you again. Is this still the best number for the job?`,
         stage: "confirm_returning_address",
       }, now);
     }
@@ -226,7 +229,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "Perfect—what’s going on with the electrical today?",
+        replyText: "Perfect - what can we help with this time?",
         stage: state.stage,
       }, now);
     }
@@ -310,169 +313,17 @@ export async function handleChatMessage(
   }
 
   if (!isLeadOnlyLaunch(config) && state.stage === "offer_slots" && state.lastOfferedOptions?.length) {
-    console.log("[SLOT SELECT]", {
-      messageText,
-      lastOfferedOptions: state.lastOfferedOptions?.map((o) => `${o.technician}:${o.label}`),
-      stage: state.stage,
-      bookingStatus: state.bookingStatus,
-    });
-    const selectedIndex = matchOptionSelectionIndex(messageText, state.lastOfferedOptions);
-    if (selectedIndex !== undefined) {
-      const previouslyOfferedOptions = [...state.lastOfferedOptions];
-      const selectedOption = previouslyOfferedOptions[selectedIndex];
-
-      const customerRequest = toCustomerRequest(state.customer);
-      const freshAvailability = await getAvailabilityTool(customerRequest, config, bookSmartConfig);
-      const freshOptions = toPresentedSlotOptions(freshAvailability.slots);
-
-      if (freshAvailability.status !== "slots_available" || freshOptions.length !== 3) {
-        clearOfferedSlots(state);
-        state.stage = "human_handoff";
-        state.bookingStatus = "handoff";
-        state.analytics.lastHandoffReason = "booking_fallback";
-        await storage.appendHandoffEvent({
-          conversationId: state.sessionId,
-          reason: "fallback",
-          timestamp: now,
-          metadata: {
-            cause: "slot_refresh_failed",
-            availabilityStatus: freshAvailability.status,
-          },
-        });
-        await recordStageOnce(storage, state, "escalated", now, {
-          reason: "booking_fallback",
-        });
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: withHumanHandoffContact(
-            "I need to double-check the calendar before I lock that in. I’m pulling in a person now.",
-            config,
-          ),
-          stage: state.stage,
-          handoffRequired: true,
-        }, now);
-      }
-
-      if (!presentedOptionsMatch(previouslyOfferedOptions, freshOptions)) {
-        replaceOfferedSlots(state, freshOptions, now);
-        await recordSlotExposureSet(storage, state, state.lastOfferedOptions, now);
-        await recordStageOnce(storage, state, "availability_presented", now, {
-          slotCount: state.lastOfferedOptions.length,
-          refreshed: true,
-        });
-        const refreshedSlotList = state.lastOfferedOptions.map((option, index) => `${index + 1}. ${option.label}`).join("\n");
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText:
-            `Those times just changed, so here are the latest openings:\n${refreshedSlotList}\n\nReply with 1, 2, or 3 to confirm your appointment.`,
-          stage: state.stage,
-          options: state.lastOfferedOptions,
-        }, now);
-      }
-
-      const freshSelectedOption = freshOptions[selectedIndex];
-      await recordSlotSelection(storage, state, freshSelectedOption, now);
-      await recordStageOnce(storage, state, "slot_selected", now, {
-        slotLabel: freshSelectedOption.label,
-      });
-      await recordMessage(storage, {
-        conversationId: state.sessionId,
-        direction: "tool",
-        timestamp: now,
-        toolName: "create_booking",
-        toolCallSummary: `Booking requested for ${freshSelectedOption.label}.`,
-      });
-      const booking = await createBookingTool(
-        customerRequest,
-        {
-          technician: freshSelectedOption.technician,
-          start: freshSelectedOption.start,
-          end: freshSelectedOption.end,
-          bookingTarget: freshSelectedOption.bookingTarget,
-          label: freshSelectedOption.label,
-          driveMinutes: 0,
-          reason: "Selected in BookSmart chat",
-          score: 0,
-          serviceCategory: "generic-electrical",
-        },
+    clearOfferedSlots(state);
+    if (shouldSubmitLead(state)) {
+      state.bookingStatus = "lead_submitted";
+      return submitLeadFromState(
+        storage,
+        state,
         config,
-      );
-
-      if (booking.status === "booked") {
-        clearOfferedSlots(state);
-        state.stage = "booked";
-        state.bookingStatus = "booked";
-        state.analytics.finalHcpJobType = freshSelectedOption.bookingTarget;
-        await storage.appendBookingEvent({
-          conversationId: state.sessionId,
-          bookingExternalId: booking.externalId,
-          finalHcpJobType: freshSelectedOption.bookingTarget,
-          bookingStatus: booking.status,
-          timestamp: now,
-          metadata: {
-            slotLabel: freshSelectedOption.label,
-          },
-        });
-        await recordStageOnce(storage, state, "booked", now, {
-          bookingId: booking.externalId,
-        });
-        const reply = booking.confirmedBooking?.exactMatch === false
-          ? `${booking.presentation.replyText} I’m double-checking the exact arrival window in our calendar now and will only confirm what’s actually on the schedule.`
-          : `${booking.presentation.replyText} You’re booked for ${freshSelectedOption.label}.`;
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: reply,
-          stage: state.stage,
-          bookingId: booking.externalId,
-        }, now);
-      }
-
-      if (booking.presentation.options?.length) {
-        replaceOfferedSlots(state, booking.presentation.options.slice(0, 3), now);
-        await recordSlotExposureSet(storage, state, state.lastOfferedOptions, now);
-        await recordStageOnce(storage, state, "availability_presented", now, {
-          slotCount: state.lastOfferedOptions?.length ?? 0,
-        });
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: booking.presentation.replyText,
-          stage: state.stage,
-          options: state.lastOfferedOptions,
-        }, now);
-      }
-
-      clearOfferedSlots(state);
-      state.stage = "human_handoff";
-      state.bookingStatus = "handoff";
-      state.analytics.lastHandoffReason = "booking_fallback";
-      await storage.appendBookingEvent({
-        conversationId: state.sessionId,
-        finalHcpJobType: freshSelectedOption.bookingTarget,
-        bookingStatus: booking.status,
-        timestamp: now,
-      });
-      await storage.appendHandoffEvent({
-        conversationId: state.sessionId,
-        reason: "booking_fallback",
-        timestamp: now,
-        metadata: {
-          bookingStatus: booking.status,
-        },
-      });
-      await recordStageOnce(storage, state, "escalated", now, {
-        reason: "booking_fallback",
-      });
-      return persistReply(storage, state, {
-        success: true,
         sessionId,
-        replyText: booking.presentation.replyText,
-        stage: state.stage,
-        handoffRequired: true,
-      }, now);
+        now,
+        "I’m not locking in previously offered windows automatically anymore. I’ve sent this to scheduling, and we’ll confirm the exact appointment time from Housecall Pro before promising anything.",
+      );
     }
   }
 
@@ -685,7 +536,7 @@ export async function handleChatMessage(
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: askForAddress(state),
+        replyText: buildNextBookingPrompt(state),
         stage: state.stage,
       }, now);
     } else {
@@ -934,6 +785,30 @@ export async function handleChatMessage(
       }, now);
     }
     state.customer.preferredWindow = preferredWindow;
+    state.stage = "collect_job_notes";
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: askForJobNotes(state),
+      stage: state.stage,
+    }, now);
+  }
+
+  if (!state.techNotesCaptured) {
+    state.stage = "collect_job_notes";
+    if (!looksLikeStructuredReplyForCurrentStage(state, messageText, bookSmartConfig)) {
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForJobNotes(state),
+        stage: state.stage,
+      }, now);
+    }
+
+    state.techNotesCaptured = true;
+    if (!wantsToSkipJobNotes(messageText)) {
+      state.customer.notes = appendCustomerNote(state.customer.notes, messageText);
+    }
   }
   const finalGuardReply = await enforceBookSmartGuards(storage, state, config, bookSmartConfig, sessionId, now);
   if (finalGuardReply) {
@@ -1131,7 +1006,6 @@ function setServiceDetails(
   const serviceMatch = classifyServiceType(messageText, config);
   state.customer.requestedService = serviceMatch.serviceType.requestedServiceLabel;
   state.serviceTypeId = serviceMatch.serviceType.id;
-  state.stage = "collect_address";
 
   const urgency = detectUrgency(messageText, config);
   state.analytics.urgencyKeywordsDetected = mergeUrgencyKeywords(
@@ -1144,6 +1018,7 @@ function setServiceDetails(
   }
 
   state.urgency = "normal";
+  state.stage = deriveStageFromState(state);
 }
 
 function toCustomerRequest(customer: Partial<CustomerRequest>): CustomerRequest {
@@ -1800,48 +1675,16 @@ async function enforceBookSmartGuards(
     state.bookingStatus !== "handoff" &&
     state.bookingStatus !== "lead_submitted"
   ) {
-    const customerRequest = toCustomerRequest(state.customer);
-    const availability = await getAvailabilityTool(customerRequest, config, bookSmartConfig);
-
-    if (availability.status === "slots_available" && availability.slots.length > 0) {
-      const options = toPresentedSlotOptions(availability.slots);
-      replaceOfferedSlots(state, options, timestamp);
-      const offeredOptions = state.lastOfferedOptions ?? [];
-      state.analytics.slotsShownCount += offeredOptions.length;
-      await recordSlotExposureSet(storage, state, offeredOptions, timestamp);
-      await recordStageOnce(storage, state, "availability_presented", timestamp, {
-        slotCount: offeredOptions.length,
-      });
-      const slotList = offeredOptions.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
-      const replyText = `Here are our next available times:\n${slotList}\n\nReply with 1, 2, or 3 to confirm your appointment.`;
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText,
-        stage: state.stage,
-        options: offeredOptions,
-      }, timestamp);
-    }
-
-    if (availability.status === "no_availability") {
-      const maxDays = config.scheduling.maxLookaheadTotalDays;
-      state.bookingStatus = "lead_submitted";
-      return submitLeadFromState(
-        storage,
-        state,
-        config,
-        sessionId,
-        timestamp,
-        `We don't have any openings in the next ${maxDays} days that match your request — that's unusual for us. I've passed your info to our team and they'll reach out within one business day to get you scheduled.`,
-      );
-    }
-
-    // No bookable slots: set before submit so downstream logic (e.g. OpenAI on the same turn) sees a terminal lead state
-    if (availability.status !== "slots_available" || availability.slots.length === 0) {
-      state.bookingStatus = "lead_submitted";
-    }
-
-    return submitLeadFromState(storage, state, config, sessionId, timestamp);
+    clearOfferedSlots(state);
+    state.bookingStatus = "lead_submitted";
+    return submitLeadFromState(
+      storage,
+      state,
+      config,
+      sessionId,
+      timestamp,
+      "I’ve got everything I need. I’m sending this to scheduling now, and we’ll confirm the exact appointment time from Housecall Pro instead of promising a window that hasn’t been verified yet.",
+    );
   }
 
   return undefined;
@@ -1956,6 +1799,10 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "collect_preferred_window";
   }
 
+  if (!state.techNotesCaptured) {
+    return "collect_job_notes";
+  }
+
   return "ready_for_availability";
 }
 
@@ -1982,6 +1829,9 @@ function listMissingFields(state: ChatSessionState): string[] {
   if (!state.customer.preferredWindow) {
     missing.push("preferred_window");
   }
+  if (!state.techNotesCaptured) {
+    missing.push("job_notes");
+  }
   return missing;
 }
 
@@ -1995,6 +1845,7 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
     state.customer.phone &&
     state.customer.email &&
     state.customer.preferredWindow &&
+    state.techNotesCaptured &&
     state.bookingStatus !== "lead_submitted" &&
     state.bookingStatus !== "handoff",
   );
@@ -2067,9 +1918,13 @@ function applyStructuredConversationUpdates(
     state.customer.preferredWindow = updates.preferredWindow;
     applied.preferredWindow = updates.preferredWindow;
   }
-  if (updates.notes && updates.notes !== state.customer.notes) {
-    state.customer.notes = updates.notes;
-    applied.notes = updates.notes;
+  if (updates.notes) {
+    const mergedNotes = appendCustomerNote(state.customer.notes, updates.notes);
+    if (mergedNotes !== state.customer.notes) {
+      state.customer.notes = mergedNotes;
+      state.techNotesCaptured = true;
+      applied.notes = mergedNotes;
+    }
   }
 
   state.stage = deriveStageFromState(state);
@@ -2222,6 +2077,7 @@ function shouldUseOpenAiStructuredFlow(
 ): boolean {
   return (
     state.stage === "collect_preferred_window" ||
+    state.stage === "collect_job_notes" ||
     state.stage === "offer_slots" ||
     Boolean(extractEmailAddress(messageText)) ||
     Boolean(extractPhoneNumber(messageText)) ||
@@ -2271,6 +2127,10 @@ function askForEmail(state: ChatSessionState): string {
 
 function askForPreferredWindow(state: ChatSessionState): string {
   return personalizeReply(state, "morning or afternoon?");
+}
+
+function askForJobNotes(state: ChatSessionState): string {
+  return personalizeReply(state, "anything else the tech should know before we come out?");
 }
 
 function fallbackForUnhandledQuestion(config: AppConfig): string {
@@ -2323,6 +2183,8 @@ function looksLikeStructuredReplyForCurrentStage(
       return Boolean(extractEmailAddress(text) || wantsToSkipEmail(text));
     case "collect_preferred_window":
       return Boolean(inferPreferredWindow(text));
+    case "collect_job_notes":
+      return Boolean(text.trim());
     default:
       return false;
   }
@@ -2363,6 +2225,31 @@ function isNegativeReply(text: string): boolean {
     /^(n|no|nope|nah|moved)\b/i.test(t) ||
     /\b(new address|different address|not there|not anymore|new place)\b/i.test(t)
   );
+}
+
+function wantsToSkipJobNotes(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    isNegativeReply(normalized) ||
+    /^(no|nope|nah|that'?s it|that is it|all set|nothing else|no more|no thanks|n\/a)$/i.test(normalized) ||
+    /\b(that should be it|that'?s everything|nothing special|nothing really|no other notes)\b/i.test(normalized)
+  );
+}
+
+function appendCustomerNote(existing: string | undefined, incoming: string): string {
+  const next = incoming.trim();
+  if (!next) {
+    return existing ?? "";
+  }
+  if (!existing?.trim()) {
+    return next;
+  }
+  const existingNormalized = existing.trim().toLowerCase();
+  const nextNormalized = next.toLowerCase();
+  if (existingNormalized.includes(nextNormalized) || nextNormalized.includes(existingNormalized)) {
+    return existing;
+  }
+  return `${existing.trim()} ${next}`;
 }
 
 function isGreetingOnly(text: string): boolean {
@@ -2427,6 +2314,9 @@ function buildNextBookingPrompt(state: ChatSessionState): string {
   }
   if (!state.customer.preferredWindow) {
     return askForPreferredWindow(state);
+  }
+  if (!state.techNotesCaptured) {
+    return askForJobNotes(state);
   }
   return buildKnowledgePivot();
 }
