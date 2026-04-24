@@ -60,8 +60,6 @@ export const serviceTypeConfigSchema = z.object({
 export const bookSmartConfigSchema = z.object({
   serviceTypes: z.array(serviceTypeConfigSchema).min(1),
   serviceAreas: z.object({
-    allowedCities: z.array(z.string().min(1)),
-    restrictedCities: z.array(z.string().min(1)),
     outsideAreaBehavior: z.literal("handoff"),
   }),
   urgencyKeywords: z.array(z.object({

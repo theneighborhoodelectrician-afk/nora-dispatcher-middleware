@@ -38,11 +38,11 @@ import {
   requestPhoto,
 } from "../tools/booksmart.js";
 import { OpenAiFunctionTool, runOpenAiResponses } from "./openaiResponses.js";
+import { isValidServiceZip, lookupZip } from "../lib/zipLookup.js";
 import { lookupCustomerByPhone } from "../integrations/housecallPro.js";
 
 type ChatStage =
   | "collect_name"
-  | "collect_city"
   | "collect_service_type"
   | "collect_address"
   | "collect_zip"
@@ -120,6 +120,11 @@ export async function handleChatMessage(
   }
 
   const normalized = normalizeBlooioInboundPayload(parsed.data);
+  console.log("[PHONE DEBUG]", {
+    customerPhone: normalized.customer?.phone,
+    contactPhone: normalized.contact?.phone,
+    sessionId: normalized.sessionId,
+  });
   const sessionId = normalized.sessionId;
   if (!sessionId) {
     throw new AppError("Missing chat session id", 400, "A chat session id is required.");
@@ -465,32 +470,74 @@ export async function handleChatMessage(
     }, now);
   }
 
-  if (state.stage === "collect_city" && state.transcript.length > 2 && isGreetingOnly(messageText)) {
+  if (!state.customer.requestedService && state.transcript.length <= 2) {
+    if (isGreetingOnly(messageText)) {
+      state.stage = "collect_service_type";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: bookSmartConfig.conversation.openingQuestion,
+        stage: state.stage,
+      }, now);
+    }
+    if (isGenericHelpRequest(messageText)) {
+      state.stage = "collect_service_type";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: "got you. what’s going on?",
+        stage: state.stage,
+      }, now);
+    }
+    setServiceDetails(state, messageText, bookSmartConfig);
+    await recordStageOnce(storage, state, "service_identified", now, {
+      serviceTypeId: state.serviceTypeId,
+    });
+    if (state.urgency === "urgent") {
+      handoffToHuman("urgent");
+      state.stage = "human_handoff";
+      state.bookingStatus = "handoff";
+      state.analytics.lastHandoffReason = "urgent";
+      await persistUrgencyHits(storage, state, now);
+      await storage.appendHandoffEvent({
+        conversationId: state.sessionId,
+        reason: "urgent",
+        timestamp: now,
+        metadata: {
+          keywords: state.analytics.urgencyKeywordsDetected,
+        },
+      });
+      await recordMessage(storage, {
+        conversationId: state.sessionId,
+        direction: "tool",
+        timestamp: now,
+        toolName: "handoff_to_human",
+        toolCallSummary: `Escalating urgent request to a human.`,
+      });
+      await recordStageOnce(storage, state, "escalated", now, {
+        reason: "urgent",
+      });
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: withHumanHandoffContact(
+          personalizeReply(state, "that sounds urgent. pulling someone in now."),
+          config,
+        ),
+        stage: state.stage,
+        handoffRequired: true,
+      }, now);
+    }
+    state.stage = "collect_address";
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: askForCity(state),
+      replyText: askForAddress(state),
       stage: state.stage,
     }, now);
   }
 
-  if (state.stage === "collect_city" && state.transcript.length > 1) {
-    if (looksLikeKnowledgeQuestion(messageText)) {
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: fallbackForUnhandledQuestion(config),
-        stage: state.stage,
-      }, now);
-    }
-
-    state.customer.city = messageText;
-    await recordStageOnce(storage, state, "city_collected", now, {
-      city: state.customer.city,
-    });
-  }
-
-  if (!state.customer.city) {
+  if (!state.customer.requestedService) {
     if (state.stage === "collect_service_type") {
       if (isGreetingOnly(messageText)) {
         return persistReply(storage, state, {
@@ -500,7 +547,6 @@ export async function handleChatMessage(
           stage: state.stage,
         }, now);
       }
-
       if (isGenericHelpRequest(messageText)) {
         return persistReply(storage, state, {
           success: true,
@@ -509,62 +555,6 @@ export async function handleChatMessage(
           stage: state.stage,
         }, now);
       }
-
-      const cityCandidate = inferCityReply(messageText, bookSmartConfig);
-      if (cityCandidate) {
-        state.customer.city = cityCandidate;
-        await recordStageOnce(storage, state, "city_collected", now, {
-          city: state.customer.city,
-        });
-
-        const cityAreaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
-        await recordMessage(storage, {
-          conversationId: state.sessionId,
-          direction: "tool",
-          timestamp: now,
-          toolName: "check_service_area",
-          toolCallSummary: `Checked service area for ${state.customer.city}.`,
-          metadata: {
-            ok: cityAreaDecision.ok,
-          },
-        });
-
-        if (!cityAreaDecision.ok) {
-          handoffToHuman("outside_service_area");
-          state.stage = "human_handoff";
-          state.bookingStatus = "handoff";
-          state.analytics.lastHandoffReason = "outside_service_area";
-          await storage.appendHandoffEvent({
-            conversationId: state.sessionId,
-            reason: "outside_service_area",
-            timestamp: now,
-            metadata: {
-              city: state.customer.city,
-            },
-          });
-          await recordStageOnce(storage, state, "escalated", now, {
-            reason: "outside_service_area",
-          });
-          return persistReply(storage, state, {
-            success: true,
-            sessionId,
-            replyText: withHumanHandoffContact(
-              personalizeReply(state, "got it. need to check that area first."),
-              config,
-            ),
-            stage: state.stage,
-            handoffRequired: true,
-          }, now);
-        }
-
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: "got you. what’s going on?",
-          stage: state.stage,
-        }, now);
-      }
-
       if (looksLikeKnowledgeQuestion(messageText)) {
         return persistReply(storage, state, {
           success: true,
@@ -573,193 +563,6 @@ export async function handleChatMessage(
           stage: state.stage,
         }, now);
       }
-
-      setServiceDetails(state, messageText, bookSmartConfig);
-      await recordStageOnce(storage, state, "service_identified", now, {
-        serviceTypeId: state.serviceTypeId,
-      });
-      if (state.urgency === "urgent") {
-        handoffToHuman("urgent");
-        state.stage = "human_handoff";
-        state.bookingStatus = "handoff";
-        state.analytics.lastHandoffReason = "urgent";
-        await persistUrgencyHits(storage, state, now);
-        await storage.appendHandoffEvent({
-          conversationId: state.sessionId,
-          reason: "urgent",
-          timestamp: now,
-          metadata: {
-            keywords: state.analytics.urgencyKeywordsDetected,
-          },
-        });
-        await recordMessage(storage, {
-          conversationId: state.sessionId,
-          direction: "tool",
-          timestamp: now,
-          toolName: "handoff_to_human",
-          toolCallSummary: `Escalating urgent request to a human.`,
-        });
-        await recordStageOnce(storage, state, "escalated", now, {
-          reason: "urgent",
-        });
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: withHumanHandoffContact(
-            personalizeReply(state, "that sounds urgent. pulling someone in now."),
-            config,
-          ),
-          stage: state.stage,
-          handoffRequired: true,
-        }, now);
-      }
-
-      state.stage = "collect_city";
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: askForCity(state),
-        stage: state.stage,
-      }, now);
-    }
-
-    if (state.transcript.length <= 2 && isGreetingOnly(messageText)) {
-      state.stage = "collect_service_type";
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: bookSmartConfig.conversation.openingQuestion,
-        stage: state.stage,
-      }, now);
-    }
-
-    if (state.transcript.length <= 2 && isGenericHelpRequest(messageText)) {
-      state.stage = "collect_service_type";
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: "got you. what’s going on?",
-        stage: state.stage,
-      }, now);
-    }
-
-    if (state.transcript.length <= 2) {
-      const cityCandidate = inferCityReply(messageText, bookSmartConfig);
-      if (cityCandidate) {
-        state.customer.city = cityCandidate;
-        state.stage = "collect_service_type";
-        await recordStageOnce(storage, state, "city_collected", now, {
-          city: state.customer.city,
-        });
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: askForServiceType(state),
-          stage: state.stage,
-        }, now);
-      }
-    }
-
-    if (state.transcript.length <= 2) {
-      setServiceDetails(state, messageText, bookSmartConfig);
-      await recordStageOnce(storage, state, "service_identified", now, {
-        serviceTypeId: state.serviceTypeId,
-      });
-      if (state.urgency === "urgent") {
-        handoffToHuman("urgent");
-        state.stage = "human_handoff";
-        state.bookingStatus = "handoff";
-        state.analytics.lastHandoffReason = "urgent";
-        await persistUrgencyHits(storage, state, now);
-        await storage.appendHandoffEvent({
-          conversationId: state.sessionId,
-          reason: "urgent",
-          timestamp: now,
-          metadata: {
-            keywords: state.analytics.urgencyKeywordsDetected,
-          },
-        });
-        await recordMessage(storage, {
-          conversationId: state.sessionId,
-          direction: "tool",
-          timestamp: now,
-          toolName: "handoff_to_human",
-          toolCallSummary: `Escalating urgent request to a human.`,
-        });
-        await recordStageOnce(storage, state, "escalated", now, {
-          reason: "urgent",
-        });
-        return persistReply(storage, state, {
-          success: true,
-          sessionId,
-          replyText: withHumanHandoffContact(
-            personalizeReply(state, "that sounds urgent. pulling someone in now."),
-            config,
-          ),
-          stage: state.stage,
-          handoffRequired: true,
-        }, now);
-      }
-
-      state.stage = "collect_city";
-      return persistReply(storage, state, {
-        success: true,
-        sessionId,
-        replyText: askForCity(state),
-        stage: state.stage,
-      }, now);
-    }
-
-    state.stage = "collect_city";
-    return persistReply(storage, state, {
-      success: true,
-      sessionId,
-      replyText: askForCity(state),
-      stage: state.stage,
-    }, now);
-  }
-
-  const areaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
-  await recordMessage(storage, {
-    conversationId: state.sessionId,
-    direction: "tool",
-    timestamp: now,
-    toolName: "check_service_area",
-    toolCallSummary: `Checked service area for ${state.customer.city ?? "unknown city"}.`,
-    metadata: {
-      ok: areaDecision.ok,
-    },
-  });
-  if (!areaDecision.ok) {
-    handoffToHuman("outside_service_area");
-    state.stage = "human_handoff";
-    state.bookingStatus = "handoff";
-    state.analytics.lastHandoffReason = "outside_service_area";
-    await storage.appendHandoffEvent({
-      conversationId: state.sessionId,
-      reason: "outside_service_area",
-      timestamp: now,
-      metadata: {
-        city: state.customer.city,
-      },
-    });
-    await recordStageOnce(storage, state, "escalated", now, {
-      reason: "outside_service_area",
-    });
-    return persistReply(storage, state, {
-      success: true,
-      sessionId,
-      replyText: withHumanHandoffContact(
-        personalizeReply(state, "got it. need to check that area first."),
-        config,
-      ),
-      stage: state.stage,
-      handoffRequired: true,
-    }, now);
-  }
-
-  if (!state.customer.requestedService) {
-    if (state.stage === "collect_service_type") {
       await recordMessage(storage, {
         conversationId: state.sessionId,
         direction: "tool",
@@ -866,11 +669,16 @@ export async function handleChatMessage(
 
   if (!state.customer.address) {
     if (state.stage === "collect_address") {
+      if (isGreetingOnly(messageText)) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForAddress(state),
+          stage: state.stage,
+        }, now);
+      }
       state.customer.address = messageText;
       state.customer.zipCode = state.customer.zipCode ?? extractZipCode(messageText);
-      await recordStageOnce(storage, state, "address_collected", now, {
-        zipCode: state.customer.zipCode,
-      });
       if (!state.customer.zipCode) {
         state.stage = "collect_zip";
         return persistReply(storage, state, {
@@ -880,7 +688,21 @@ export async function handleChatMessage(
           stage: state.stage,
         }, now);
       }
-
+      const zipOutcome = await onZipCodeCollected(
+        storage,
+        state,
+        config,
+        sessionId,
+        now,
+        state.customer.zipCode,
+      );
+      if (zipOutcome) {
+        return zipOutcome;
+      }
+      await recordStageOnce(storage, state, "address_collected", now, {
+        zipCode: state.customer.zipCode,
+        city: state.customer.city,
+      });
       if (!state.customer.firstName) {
         state.stage = "collect_name";
         return persistReply(storage, state, {
@@ -912,9 +734,13 @@ export async function handleChatMessage(
         stage: state.stage,
       }, now);
     }
-    state.customer.zipCode = zip;
+    const zipOutcome = await onZipCodeCollected(storage, state, config, sessionId, now, zip);
+    if (zipOutcome) {
+      return zipOutcome;
+    }
     await recordStageOnce(storage, state, "address_collected", now, {
-      zipCode: zip,
+      zipCode: state.customer.zipCode,
+      city: state.customer.city,
     });
     if (!state.customer.firstName) {
       state.stage = "collect_name";
@@ -1270,6 +1096,52 @@ function toCustomerRequest(customer: Partial<CustomerRequest>): CustomerRequest 
   };
 }
 
+/** If zip is not in the Macomb/Oakland list, we stop booking and (when possible) submit a real lead. */
+async function onZipCodeCollected(
+  storage: StorageAdapter,
+  state: ChatSessionState,
+  config: AppConfig,
+  sessionId: string,
+  now: number,
+  rawZip: string,
+): Promise<ChatReplyPayload | undefined> {
+  const digits = rawZip.replace(/\D/g, "");
+  if (digits.length < 5) {
+    return undefined;
+  }
+  const z = digits.slice(0, 5);
+  state.customer.zipCode = z;
+  const loc = lookupZip(z);
+  if (loc) {
+    state.customer.city = loc.city;
+    return undefined;
+  }
+  state.bookingStatus = "lead_submitted";
+  if (state.customer.phone) {
+    return submitLeadFromState(
+      storage,
+      state,
+      config,
+      sessionId,
+      now,
+      "We currently service Macomb and Oakland Counties. I've passed your info to our team in case we can help.",
+    );
+  }
+  state.stage = "lead_submitted";
+  return persistReply(
+    storage,
+    state,
+    {
+      success: true,
+      sessionId,
+      replyText:
+        "We currently service Macomb and Oakland Counties. I've passed your info to our team in case we can help.",
+      stage: "lead_submitted",
+    },
+    now,
+  );
+}
+
 async function submitLeadFromState(
   storage: StorageAdapter,
   state: ChatSessionState,
@@ -1362,7 +1234,8 @@ function normalizeText(value: string | undefined): string {
 }
 
 function extractZipCode(text: string): string | undefined {
-  return text.match(/\b\d{5}(?:-\d{4})?\b\s*$/)?.[0]?.slice(0, 5);
+  const m = text.match(/\b(\d{5})(?:-\d{4})?\b/);
+  return m ? m[1] : undefined;
 }
 
 function extractPhoneNumber(text: string): string | undefined {
@@ -1538,6 +1411,7 @@ function createOpenAiTools(
         if (applied.address || applied.zipCode) {
           await recordStageOnce(storage, state, "address_collected", timestamp, {
             zipCode: state.customer.zipCode,
+            city: state.customer.city,
           });
         }
         if (applied.firstName || applied.phone || applied.email) {
@@ -1566,32 +1440,43 @@ function createOpenAiTools(
     },
     {
       name: "check_service_area",
-      description: "Validate whether a city is inside the configured service area.",
+      description: "Validate whether a ZIP is inside the Macomb/Oakland service area (by zip).",
       parameters: {
         type: "object",
         properties: {
-          city: {
+          zipCode: {
             type: "string",
-            description: "Customer project city.",
+            description: "5-digit or ZIP+4 customer project ZIP.",
           },
         },
-        required: ["city"],
+        required: ["zipCode"],
         additionalProperties: false,
       },
       execute: async (args) => {
-        const city = readStringArg(args, "city") ?? state.customer.city;
-        if (city) {
-          state.customer.city = city;
-          await recordStageOnce(storage, state, "city_collected", timestamp, { city });
+        const rawZip = readStringArg(args, "zipCode") ?? state.customer.zipCode;
+        if (rawZip) {
+          const digits = rawZip.replace(/\D/g, "");
+          if (digits.length >= 5) {
+            const z5 = digits.slice(0, 5);
+            state.customer.zipCode = z5;
+            const loc = lookupZip(z5);
+            if (loc) {
+              state.customer.city = loc.city;
+            }
+            await recordStageOnce(storage, state, "address_collected", timestamp, {
+              zipCode: z5,
+              city: state.customer.city,
+            });
+          }
         }
 
-        const decision = checkServiceArea(city, bookSmartConfig);
+        const decision = checkServiceArea(state.customer.zipCode, bookSmartConfig);
         await recordMessage(storage, {
           conversationId: state.sessionId,
           direction: "tool",
           timestamp,
           toolName: "check_service_area",
-          toolCallSummary: `Checked service area for ${city ?? "unknown city"}.`,
+          toolCallSummary: `Checked service area for ZIP ${state.customer.zipCode ?? "unknown"}.`,
           metadata: {
             ok: decision.ok,
           },
@@ -1750,8 +1635,8 @@ async function enforceBookSmartGuards(
     }, timestamp);
   }
 
-  if (state.customer.city && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff") {
-    const areaDecision = checkServiceArea(state.customer.city, bookSmartConfig);
+  if (state.customer.zipCode && state.bookingStatus !== "booked" && state.bookingStatus !== "handoff") {
+    const areaDecision = checkServiceArea(state.customer.zipCode, bookSmartConfig);
     if (!areaDecision.ok) {
       state.stage = "human_handoff";
       state.bookingStatus = "handoff";
@@ -1761,22 +1646,27 @@ async function enforceBookSmartGuards(
         reason: "outside_service_area",
         timestamp,
         metadata: {
-          city: state.customer.city,
+          zipCode: state.customer.zipCode,
         },
       });
       await recordStageOnce(storage, state, "escalated", timestamp, {
         reason: "outside_service_area",
       });
-        return persistReply(storage, state, {
+      return persistReply(
+        storage,
+        state,
+        {
           success: true,
           sessionId,
           replyText: withHumanHandoffContact(
             personalizeReply(state, "got it. need to check that area first."),
             config,
           ),
-        stage: state.stage,
-        handoffRequired: true,
-      }, timestamp);
+          stage: state.stage,
+          handoffRequired: true,
+        },
+        timestamp,
+      );
     }
   }
 
@@ -1937,10 +1827,6 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "collect_service_type";
   }
 
-  if (!state.customer.city) {
-    return "collect_city";
-  }
-
   if (!state.customer.address) {
     return "collect_address";
   }
@@ -1972,17 +1858,11 @@ function listMissingFields(state: ChatSessionState): string[] {
   if (!state.customer.requestedService) {
     missing.push("service_type");
   }
-  if (!state.customer.city) {
-    missing.push("city");
-  }
   if (!state.customer.address) {
     missing.push("address");
   }
   if (!state.customer.zipCode) {
     missing.push("zip_code");
-  }
-  if (!state.customer.firstName) {
-    missing.push("first_name");
   }
   if (!state.customer.phone) {
     missing.push("phone");
@@ -1998,7 +1878,7 @@ function listMissingFields(state: ChatSessionState): string[] {
 
 function shouldSubmitLead(state: ChatSessionState): boolean {
   return Boolean(
-    state.customer.city &&
+    isValidServiceZip(state.customer.zipCode ?? "") &&
     state.customer.requestedService &&
     state.customer.address &&
     state.customer.zipCode &&
@@ -2044,8 +1924,19 @@ function applyStructuredConversationUpdates(
     applied.address = updates.address;
   }
   if (updates.zipCode && updates.zipCode !== state.customer.zipCode) {
-    state.customer.zipCode = updates.zipCode;
-    applied.zipCode = updates.zipCode;
+    const digits = updates.zipCode.replace(/\D/g, "");
+    if (digits.length >= 5) {
+      const z5 = digits.slice(0, 5);
+      state.customer.zipCode = z5;
+      applied.zipCode = z5;
+      const loc = lookupZip(z5);
+      if (loc) {
+        state.customer.city = loc.city;
+      }
+    } else {
+      state.customer.zipCode = updates.zipCode.trim();
+      applied.zipCode = updates.zipCode.trim();
+    }
   }
   if (updates.firstName && updates.firstName !== state.customer.firstName) {
     state.customer.firstName = updates.firstName;
@@ -2213,10 +2104,6 @@ function askForServiceType(state: ChatSessionState): string {
   return personalizeReply(state, "what’s going on?");
 }
 
-function askForCity(state: ChatSessionState): string {
-  return personalizeReply(state, "city?");
-}
-
 function askForAddress(state: ChatSessionState): string {
   return personalizeReply(state, "address?");
 }
@@ -2277,8 +2164,6 @@ function looksLikeStructuredReplyForCurrentStage(
   config: typeof DEFAULT_BOOKSMART_CONFIG,
 ): boolean {
   switch (deriveStageFromState(state)) {
-    case "collect_city":
-      return Boolean(inferCityReply(text, config));
     case "collect_service_type":
       return classifyServiceType(text, config).matched;
     case "collect_address":
@@ -2350,40 +2235,6 @@ function isGenericHelpRequest(text: string): boolean {
   );
 }
 
-function inferCityReply(
-  text: string,
-  config: typeof DEFAULT_BOOKSMART_CONFIG,
-): string | undefined {
-  const normalized = text.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  if (
-    isGreetingOnly(normalized) ||
-    isGenericHelpRequest(normalized) ||
-    looksLikeKnowledgeQuestion(normalized) ||
-    classifyServiceType(normalized, config).matched
-  ) {
-    return undefined;
-  }
-
-  const cleaned = normalized.replace(/[^a-zA-Z\s'-]/g, " ").trim().toLowerCase();
-  if (!cleaned || cleaned.split(/\s+/).length > 3) {
-    return undefined;
-  }
-
-  return normalizeCityValue(cleaned);
-}
-
-function normalizeCityValue(value: string): string {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => capitalize(word))
-    .join(" ");
-}
-
 function looksLikeKnowledgeQuestion(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   return (
@@ -2413,9 +2264,6 @@ function buildNextBookingPrompt(state: ChatSessionState): string {
   }
   if (!state.customer.requestedService) {
     return askForServiceType(state);
-  }
-  if (!state.customer.city) {
-    return askForCity(state);
   }
   if (!state.customer.address) {
     return askForAddress(state);

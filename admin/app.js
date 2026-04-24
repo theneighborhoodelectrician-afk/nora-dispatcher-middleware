@@ -31,8 +31,6 @@ const conversationOpeningQuestionInput = document.getElementById("conversation-o
 const conversationAfterHoursSelect = document.getElementById("conversation-after-hours");
 const conversationHandoffMessageInput = document.getElementById("conversation-handoff-message");
 const conversationRequestPhotosContainer = document.getElementById("conversation-request-photos");
-const allowedCitiesInput = document.getElementById("service-areas-allowed");
-const restrictedCitiesInput = document.getElementById("service-areas-restricted");
 const serviceAreaBehaviorSelect = document.getElementById("service-areas-behavior");
 const bookingRulesSameDaySelect = document.getElementById("booking-rules-same-day");
 const bookingRulesMinimumNoticeInput = document.getElementById("booking-rules-minimum-notice");
@@ -189,8 +187,6 @@ function bindEvents() {
     conversationOpeningQuestionInput,
     conversationAfterHoursSelect,
     conversationHandoffMessageInput,
-    allowedCitiesInput,
-    restrictedCitiesInput,
     serviceAreaBehaviorSelect,
     bookingRulesSameDaySelect,
     bookingRulesMinimumNoticeInput,
@@ -522,8 +518,8 @@ function openRelatedConfigSection() {
     }
   }
 
-  if (outcome.handoffYesNo && outcome.abandonmentStage === "collect_city") {
-    allowedCitiesInput.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (outcome.handoffYesNo && outcome.abandonmentStage === "collect_zip") {
+    serviceAreaBehaviorSelect.scrollIntoView({ behavior: "smooth", block: "start" });
     configStatus.textContent = "Jumped to service areas for this conversation.";
     return;
   }
@@ -591,8 +587,6 @@ function updateConfigFromForms() {
   currentConfig.conversation.requestPhotosFor = Array.from(
     conversationRequestPhotosContainer.querySelectorAll('input[type="checkbox"]:checked'),
   ).map((input) => input.value);
-  currentConfig.serviceAreas.allowedCities = textAreaToLines(allowedCitiesInput.value);
-  currentConfig.serviceAreas.restrictedCities = textAreaToLines(restrictedCitiesInput.value);
   currentConfig.serviceAreas.outsideAreaBehavior = serviceAreaBehaviorSelect.value;
   currentConfig.bookingRules.sameDayAllowed = bookingRulesSameDaySelect.value === "true";
   currentConfig.bookingRules.minimumNoticeHours = Number(bookingRulesMinimumNoticeInput.value) || 0;
@@ -629,8 +623,6 @@ function populateConfigForms(config) {
   conversationOpeningQuestionInput.value = config.conversation.openingQuestion ?? "";
   conversationAfterHoursSelect.value = config.conversation.afterHoursBehavior ?? "continue";
   conversationHandoffMessageInput.value = config.conversation.handoffMessage ?? "";
-  allowedCitiesInput.value = (config.serviceAreas.allowedCities ?? []).join("\n");
-  restrictedCitiesInput.value = (config.serviceAreas.restrictedCities ?? []).join("\n");
   serviceAreaBehaviorSelect.value = config.serviceAreas.outsideAreaBehavior ?? "handoff";
   bookingRulesSameDaySelect.value = String(config.bookingRules.sameDayAllowed ?? true);
   bookingRulesMinimumNoticeInput.value = String(config.bookingRules.minimumNoticeHours ?? 0);
@@ -1147,8 +1139,6 @@ function ensureCurrentConfig() {
     currentConfig = {
       serviceTypes: [],
       serviceAreas: {
-        allowedCities: [],
-        restrictedCities: [],
         outsideAreaBehavior: "handoff",
       },
       urgencyKeywords: [],

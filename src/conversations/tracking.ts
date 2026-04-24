@@ -238,8 +238,6 @@ function currentConversationStage(state: ChatSessionState): ConversationStage {
 
 function stageFromChatState(state: ChatSessionState): ConversationStage {
   switch (state.stage) {
-    case "collect_city":
-      return "started";
     case "collect_service_type":
       return "city_collected";
     case "collect_address":

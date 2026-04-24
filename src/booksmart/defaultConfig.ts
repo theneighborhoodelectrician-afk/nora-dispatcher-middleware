@@ -295,23 +295,6 @@ export const DEFAULT_BOOKSMART_CONFIG: BookSmartConfig = {
     },
   ],
   serviceAreas: {
-    allowedCities: [
-      "sterling heights",
-      "troy",
-      "rochester hills",
-      "royal oak",
-      "clinton township",
-      "shelby township",
-      "washington",
-      "washington township",
-      "utica",
-      "madison heights",
-      "oak park",
-      "berkley",
-      "warren",
-      "fraseR".toLowerCase(),
-    ],
-    restrictedCities: [],
     outsideAreaBehavior: "handoff",
   },
   urgencyKeywords: [

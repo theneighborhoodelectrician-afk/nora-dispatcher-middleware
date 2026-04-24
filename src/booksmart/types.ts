@@ -59,8 +59,6 @@ export interface ServiceTypeConfig {
 }
 
 export interface ServiceAreaConfig {
-  allowedCities: string[];
-  restrictedCities: string[];
   outsideAreaBehavior: "handoff";
 }
 

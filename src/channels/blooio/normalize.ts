@@ -31,6 +31,7 @@ export interface NormalizedBlooioMessage {
 }
 
 export function normalizeBlooioInboundPayload(body: Record<string, unknown>): NormalizedBlooioMessage {
+  console.log("[BLOOIO RAW]", JSON.stringify(body).slice(0, 500));
   const nestedMessage = asRecord(body.message);
   const nestedContact = asRecord(body.contact);
   const nestedCustomer = asRecord(body.customer);

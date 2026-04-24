@@ -68,8 +68,7 @@ describe("admin BookSmart config API", () => {
         body: {
           ...DEFAULT_BOOKSMART_CONFIG,
           serviceAreas: {
-            ...DEFAULT_BOOKSMART_CONFIG.serviceAreas,
-            allowedCities: [" Sterling Heights ", "TROY", "TROY"],
+            outsideAreaBehavior: "handoff",
           },
         },
       } as never,
@@ -78,7 +77,7 @@ describe("admin BookSmart config API", () => {
 
     const saved = await storage.getBookSmartConfig();
     expect(res.statusCode).toBe(200);
-    expect(saved?.serviceAreas.allowedCities).toEqual(["sterling heights", "troy"]);
+    expect(saved?.serviceAreas).toEqual({ outsideAreaBehavior: "handoff" });
 
     prepareSpy.mockRestore();
     adapterSpy.mockRestore();

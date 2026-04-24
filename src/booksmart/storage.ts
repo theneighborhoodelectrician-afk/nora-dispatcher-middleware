@@ -50,10 +50,6 @@ function mergeBookSmartConfig(
     serviceAreas: {
       ...defaults.serviceAreas,
       ...stored.serviceAreas,
-      allowedCities: stored.serviceAreas?.allowedCities?.length
-        ? stored.serviceAreas.allowedCities
-        : defaults.serviceAreas.allowedCities,
-      restrictedCities: stored.serviceAreas?.restrictedCities ?? defaults.serviceAreas.restrictedCities,
     },
     urgencyKeywords: stored.urgencyKeywords?.length
       ? stored.urgencyKeywords
@@ -86,8 +82,6 @@ function normalizeBookSmartConfig(config: BookSmartConfig): BookSmartConfig {
     })),
     serviceAreas: {
       ...config.serviceAreas,
-      allowedCities: uniqStrings(config.serviceAreas.allowedCities).map(normalizeCity),
-      restrictedCities: uniqStrings(config.serviceAreas.restrictedCities).map(normalizeCity),
     },
     urgencyKeywords: config.urgencyKeywords.map((keyword) => ({
       ...keyword,

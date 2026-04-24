@@ -3,45 +3,29 @@ import { BookSmartConfig, ServiceTypeConfig, ServiceTypeMatch } from "../booksma
 import { AppConfig } from "../config.js";
 import { CustomerRequest } from "../domain/types.js";
 import { BookSmartHcpAdapter } from "../adapters/hcp/client.js";
+import { isValidServiceZip, lookupZip } from "../lib/zipLookup.js";
 import { getAvailability } from "../services/availability.js";
 import { createBooking } from "../services/booking.js";
 import { LeadResponsePayload } from "../domain/types.js";
 
 export function checkServiceArea(
-  city: string | undefined,
-  config: BookSmartConfig = DEFAULT_BOOKSMART_CONFIG,
+  zipCode: string | undefined,
+  _config: BookSmartConfig = DEFAULT_BOOKSMART_CONFIG,
 ): {
   ok: boolean;
   normalizedCity?: string;
   reason?: "outside_service_area";
 } {
-  const normalizedCity = normalizeCity(city);
-  if (!normalizedCity) {
+  if (!isValidServiceZip(zipCode ?? "")) {
     return {
       ok: false,
       reason: "outside_service_area",
     };
   }
-
-  if (config.serviceAreas.restrictedCities.includes(normalizedCity)) {
-    return {
-      ok: false,
-      normalizedCity,
-      reason: "outside_service_area",
-    };
-  }
-
-  const isAllowed = config.serviceAreas.allowedCities.some(
-    (allowed) =>
-      allowed.includes(normalizedCity) ||
-      normalizedCity.includes(allowed) ||
-      levenshtein(allowed, normalizedCity) <= 2,
-  );
-
+  const loc = lookupZip(zipCode ?? "");
   return {
-    ok: isAllowed,
-    normalizedCity,
-    reason: isAllowed ? undefined : "outside_service_area",
+    ok: true,
+    normalizedCity: loc?.city,
   };
 }
 
@@ -257,14 +241,6 @@ export async function createLeadTool(
   };
 }
 
-function normalizeCity(city: string | undefined): string | undefined {
-  if (!city) {
-    return undefined;
-  }
-
-  return city.trim().toLowerCase();
-}
-
 function matchesPreferredWindow(
   isoStart: string,
   preferredWindow: "morning" | "afternoon",
@@ -293,22 +269,4 @@ function joinOptionLabels(labels: string[]): string {
   }
 
   return `${labels[0]}, ${labels[1]}, or ${labels[2]}`;
-}
-
-function levenshtein(a: string, b: string): number {
-  const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]) as number[][];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      matrix[i]![j] =
-        b[i - 1] === a[j - 1]
-          ? matrix[i - 1]![j - 1]!
-          : 1 + Math.min(
-            matrix[i - 1]![j - 1]!,
-            matrix[i - 1]![j]!,
-            matrix[i]![j - 1]!,
-          );
-    }
-  }
-  return matrix[b.length]![a.length]!;
 }
