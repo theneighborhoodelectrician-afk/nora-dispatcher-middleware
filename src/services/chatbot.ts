@@ -20,6 +20,11 @@ import { ConversationStage, LeadSourceCode } from "../conversations/types.js";
 import { CustomerRequest, PresentedSlotOption } from "../domain/types.js";
 import { AppError } from "../lib/errors.js";
 import {
+  needsExplicitFirstNameCollection,
+  resolveCustomerFirstName,
+  tryAcceptFirstNameWithoutAsking,
+} from "../lib/inferCustomerFirstName.js";
+import {
   buildBookSmartAnswerLayerKnowledgeContext,
   buildBookSmartAnswerLayerPrompt,
   buildBookSmartSystemPrompt,
@@ -255,7 +260,7 @@ export async function handleChatMessage(
     }
   }
 
-  if (state.stage === "collect_name" && !state.customer.firstName) {
+  if (state.stage === "collect_name" && needsExplicitFirstNameCollection(state.customer.firstName)) {
     if (isGreetingOnly(messageText) || isGenericHelpRequest(messageText)) {
       return persistReply(storage, state, {
         success: true,
@@ -306,9 +311,17 @@ export async function handleChatMessage(
         }, now);
       }
     }
-    const inferred = inferFirstName(messageText);
-    state.customer.firstName = inferred;
-    await recordStageOnce(storage, state, "contact_collected", now, { firstName: inferred });
+    const accepted = tryAcceptFirstNameWithoutAsking(messageText);
+    if (!accepted) {
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForFirstName(state),
+        stage: "collect_name",
+      }, now);
+    }
+    state.customer.firstName = accepted;
+    await recordStageOnce(storage, state, "contact_collected", now, { firstName: accepted });
     state.stage = "collect_service_type";
     return persistReply(storage, state, {
       success: true,
@@ -455,6 +468,15 @@ export async function handleChatMessage(
         ),
         stage: state.stage,
         handoffRequired: true,
+      }, now);
+    }
+    if (needsExplicitFirstNameCollection(state.customer.firstName)) {
+      state.stage = "collect_name";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForFirstName(state),
+        stage: state.stage,
       }, now);
     }
     state.stage = "collect_address";
@@ -639,7 +661,7 @@ export async function handleChatMessage(
         zipCode: state.customer.zipCode,
         city: state.customer.city,
       });
-      if (!state.customer.firstName) {
+      if (needsExplicitFirstNameCollection(state.customer.firstName)) {
         state.stage = "collect_name";
         return persistReply(storage, state, {
           success: true,
@@ -678,7 +700,7 @@ export async function handleChatMessage(
       zipCode: state.customer.zipCode,
       city: state.customer.city,
     });
-    if (!state.customer.firstName) {
+    if (needsExplicitFirstNameCollection(state.customer.firstName)) {
       state.stage = "collect_name";
       return persistReply(storage, state, {
         success: true,
@@ -689,9 +711,18 @@ export async function handleChatMessage(
     }
   }
 
-  if (!state.customer.firstName) {
+  if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     if (state.stage === "collect_name") {
-      state.customer.firstName = inferFirstName(messageText);
+      const accepted = tryAcceptFirstNameWithoutAsking(messageText);
+      if (!accepted) {
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForFirstName(state),
+          stage: "collect_name",
+        }, now);
+      }
+      state.customer.firstName = accepted;
       if (!state.customer.phone) {
         state.stage = "collect_phone";
         return persistReply(storage, state, {
@@ -1071,7 +1102,7 @@ function toCustomerRequest(customer: Partial<CustomerRequest>): CustomerRequest 
   }
 
   return {
-    firstName: customer.firstName ?? "Neighbor",
+    firstName: resolveCustomerFirstName(customer.firstName, customer.email),
     lastName: customer.lastName,
     phone: customer.phone,
     email: customer.email,
@@ -1254,12 +1285,6 @@ function extractPhoneNumber(text: string): string | undefined {
 
   const normalized = digits.slice(-10);
   return `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6)}`;
-}
-
-function inferFirstName(text: string): string {
-  const cleaned = text.replace(/[^a-zA-Z\s'-]/g, " ").trim();
-  const firstWord = cleaned.split(/\s+/).find(Boolean);
-  return firstWord ? capitalize(firstWord) : "Neighbor";
 }
 
 function inferPreferredWindow(text: string): "morning" | "afternoon" | undefined {
@@ -1834,7 +1859,7 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "confirm_returning_address";
   }
 
-  if (!state.customer.firstName) {
+  if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     return "collect_name";
   }
 
@@ -1871,7 +1896,7 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
 
 function listMissingFields(state: ChatSessionState): string[] {
   const missing: string[] = [];
-  if (!state.customer.firstName) {
+  if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     missing.push("first_name");
   }
   if (!state.customer.requestedService) {
@@ -1904,7 +1929,7 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
     state.customer.requestedService &&
     state.customer.address &&
     state.customer.zipCode &&
-    state.customer.firstName &&
+    !needsExplicitFirstNameCollection(state.customer.firstName) &&
     state.customer.phone &&
     state.customer.email &&
     state.customer.preferredWindow &&
@@ -1919,7 +1944,7 @@ function hasCoreBookingFields(state: ChatSessionState): boolean {
     state.customer.requestedService &&
     state.customer.address &&
     state.customer.zipCode &&
-    state.customer.firstName &&
+    !needsExplicitFirstNameCollection(state.customer.firstName) &&
     state.customer.phone &&
     state.customer.email &&
     state.customer.preferredWindow,
@@ -2438,7 +2463,7 @@ function buildNextBookingPrompt(state: ChatSessionState): string {
   if (!state.customer.zipCode) {
     return askForZip(state);
   }
-  if (!state.customer.firstName) {
+  if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     return askForFirstName(state);
   }
   if (!state.customer.phone) {

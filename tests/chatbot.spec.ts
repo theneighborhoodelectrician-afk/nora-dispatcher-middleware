@@ -102,6 +102,39 @@ describe("BookSmart chat flow", () => {
     expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
   });
 
+  it("asks for a first name when the opener is a job description (not a single name token)", async () => {
+    const storage = new MemoryStorageAdapter();
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-opener-job-not-name",
+        text: "Looking to get 2 smart switches and 1 regular switch replaced",
+        contact: { phone: "555-111-8888" },
+      },
+      storage,
+      config,
+    );
+    expect(reply.stage).toBe("collect_name");
+    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+  });
+
+  it("still asks for a real first name when the channel prefills a junk placeholder", async () => {
+    const storage = new MemoryStorageAdapter();
+    const reply = await handleChatMessage(
+      {
+        sessionId: "booksmart-junk-contact-firstname",
+        text: "Need two outlets checked in the kitchen",
+        contact: {
+          phone: "555-111-7777",
+          firstName: "Looking",
+        },
+      },
+      storage,
+      config,
+    );
+    expect(reply.stage).toBe("collect_name");
+    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+  });
+
   it("does not treat repeated greetings as the service description", async () => {
     const storage = new MemoryStorageAdapter();
     const sessionId = "booksmart-repeated-greetings-service";
