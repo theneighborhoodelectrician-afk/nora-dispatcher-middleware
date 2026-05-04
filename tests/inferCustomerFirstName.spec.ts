@@ -3,7 +3,9 @@ import {
   inferCustomerFirstName,
   needsExplicitFirstNameCollection,
   resolveCustomerFirstName,
+  tryAcceptContactName,
   tryAcceptFirstNameWithoutAsking,
+  tryParseIntroducedFirstLast,
 } from "../src/lib/inferCustomerFirstName.js";
 
 describe("inferCustomerFirstName", () => {
@@ -61,6 +63,26 @@ describe("needsExplicitFirstNameCollection", () => {
     expect(needsExplicitFirstNameCollection("Looking")).toBe(true);
     expect(needsExplicitFirstNameCollection("neighbor")).toBe(true);
     expect(needsExplicitFirstNameCollection("John")).toBe(false);
+  });
+});
+
+describe("tryParseIntroducedFirstLast", () => {
+  it("parses first and last from a Hi this is… opener before the job details", () => {
+    expect(
+      tryParseIntroducedFirstLast(
+        "Hi this is Janet Waters, in Rochester hills. I’m interested in getting an evaluation of current electrical panel",
+      ),
+    ).toEqual({ firstName: "Janet", lastName: "Waters" });
+  });
+});
+
+describe("tryAcceptContactName", () => {
+  it("returns first and last when both appear in a standard intro", () => {
+    expect(
+      tryAcceptContactName(
+        "Hi this is Janet Waters, in Rochester hills. I’m interested in getting an evaluation of current electrical panel",
+      ),
+    ).toEqual({ firstName: "Janet", lastName: "Waters" });
   });
 });
 

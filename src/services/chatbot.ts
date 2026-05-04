@@ -20,9 +20,11 @@ import { ConversationStage, LeadSourceCode } from "../conversations/types.js";
 import { CustomerRequest, PresentedSlotOption } from "../domain/types.js";
 import { AppError } from "../lib/errors.js";
 import {
+  messageLooksLikeServiceJob,
   needsExplicitFirstNameCollection,
+  needsExplicitLastNameCollection,
   resolveCustomerFirstName,
-  tryAcceptFirstNameWithoutAsking,
+  tryAcceptContactName,
 } from "../lib/inferCustomerFirstName.js";
 import {
   buildBookSmartAnswerLayerKnowledgeContext,
@@ -46,6 +48,7 @@ import { lookupCustomerByPhone } from "../integrations/housecallPro.js";
 
 type ChatStage =
   | "collect_name"
+  | "collect_last_name"
   | "collect_service_type"
   | "collect_address"
   | "collect_zip"
@@ -111,6 +114,11 @@ function isLikelyPhoneForLookup(value: string): boolean {
   return value.replace(/\D/g, "").length >= 10;
 }
 
+function firstInboundCustomerMessage(state: ChatSessionState): string | undefined {
+  const entry = state.transcript.find((e) => e.direction === "inbound");
+  return entry?.text?.trim();
+}
+
 export interface ChatReplyPayload {
   success: boolean;
   sessionId: string;
@@ -171,6 +179,9 @@ export async function handleChatMessage(
     state.isReturningCustomer = true;
     if (hcpLookup.firstName) {
       state.customer.firstName = hcpLookup.firstName;
+    }
+    if (hcpLookup.lastName) {
+      state.customer.lastName = hcpLookup.lastName;
     }
     if (hcpLookup.address) {
       state.customer.address = hcpLookup.address;
@@ -260,12 +271,92 @@ export async function handleChatMessage(
     }
   }
 
+  if (state.stage === "collect_last_name") {
+    const raw = messageText.trim();
+    if (!looksLikeNameInput(raw)) {
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForLastName(state),
+        stage: "collect_last_name",
+      }, now);
+    }
+    const parts = raw
+      .replace(/[^a-zA-Z\s'-]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const formatted = parts
+      .map((p) =>
+        p
+          .split("'")
+          .map((seg) => (seg ? seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase() : seg))
+          .join("'"),
+      )
+      .join(" ");
+    state.customer.lastName = formatted;
+
+    const opener = firstInboundCustomerMessage(state);
+    if (!state.customer.requestedService && opener) {
+      setServiceDetails(state, opener, bookSmartConfig);
+    }
+    if (state.urgency === "urgent") {
+      handoffToHuman("urgent");
+      state.stage = "human_handoff";
+      state.bookingStatus = "handoff";
+      state.analytics.lastHandoffReason = "urgent";
+      await persistUrgencyHits(storage, state, now);
+      await storage.appendHandoffEvent({
+        conversationId: state.sessionId,
+        reason: "urgent",
+        timestamp: now,
+        metadata: {
+          keywords: state.analytics.urgencyKeywordsDetected,
+        },
+      });
+      await recordMessage(storage, {
+        conversationId: state.sessionId,
+        direction: "tool",
+        timestamp: now,
+        toolName: "handoff_to_human",
+        toolCallSummary: `Escalating urgent request to a human.`,
+      });
+      await recordStageOnce(storage, state, "escalated", now, {
+        reason: "urgent",
+      });
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: withHumanHandoffContact(
+          personalizeReply(state, "that sounds urgent. pulling someone in now."),
+          config,
+        ),
+        stage: state.stage,
+        handoffRequired: true,
+      }, now);
+    }
+    await recordStageOnce(storage, state, "contact_collected", now, {
+      firstName: state.customer.firstName,
+      lastName: state.customer.lastName,
+    });
+    state.stage = deriveStageFromState(state);
+    const nextReply = !state.customer.requestedService
+      ? "thanks. what’s going on with the electrical?"
+      : buildNextBookingPrompt(state);
+    return persistReply(storage, state, {
+      success: true,
+      sessionId,
+      replyText: nextReply,
+      stage: state.stage,
+    }, now);
+  }
+
   if (state.stage === "collect_name" && needsExplicitFirstNameCollection(state.customer.firstName)) {
     if (isGreetingOnly(messageText) || isGenericHelpRequest(messageText)) {
       return persistReply(storage, state, {
         success: true,
         sessionId,
-        replyText: "hey—who am I speaking with? what’s your first name?",
+        replyText: "hey—who am I speaking with? what’s your first and last name?",
         stage: "collect_name",
       }, now);
     }
@@ -311,8 +402,8 @@ export async function handleChatMessage(
         }, now);
       }
     }
-    const accepted = tryAcceptFirstNameWithoutAsking(messageText);
-    if (!accepted) {
+    const parsed = tryAcceptContactName(messageText);
+    if (!parsed) {
       return persistReply(storage, state, {
         success: true,
         sessionId,
@@ -320,14 +411,88 @@ export async function handleChatMessage(
         stage: "collect_name",
       }, now);
     }
-    state.customer.firstName = accepted;
-    await recordStageOnce(storage, state, "contact_collected", now, { firstName: accepted });
-    state.stage = "collect_service_type";
+    state.customer.firstName = parsed.firstName;
+    if (parsed.lastName?.trim()) {
+      state.customer.lastName = parsed.lastName.trim();
+    } else {
+      state.customer.lastName = undefined;
+    }
+
+    const trimmedForService = messageText.trim();
+    const nameWordCount = trimmedForService
+      .replace(/[^a-zA-Z\s'-]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+    const nameOnlyIntro =
+      Boolean(parsed) &&
+      !messageLooksLikeServiceJob(trimmedForService) &&
+      nameWordCount <= 5 &&
+      !detectUrgency(trimmedForService, bookSmartConfig).urgent;
+
+    if (!state.customer.requestedService && !nameOnlyIntro) {
+      setServiceDetails(state, messageText, bookSmartConfig);
+    } else if (!state.customer.requestedService && nameOnlyIntro) {
+      const u = detectUrgency(trimmedForService, bookSmartConfig);
+      state.analytics.urgencyKeywordsDetected = mergeUrgencyKeywords(
+        state.analytics.urgencyKeywordsDetected,
+        u.matchedKeyword,
+      );
+      if (u.urgent) {
+        state.urgency = "urgent";
+      }
+    }
+    if (state.urgency === "urgent") {
+      handoffToHuman("urgent");
+      state.stage = "human_handoff";
+      state.bookingStatus = "handoff";
+      state.analytics.lastHandoffReason = "urgent";
+      await persistUrgencyHits(storage, state, now);
+      await storage.appendHandoffEvent({
+        conversationId: state.sessionId,
+        reason: "urgent",
+        timestamp: now,
+        metadata: {
+          keywords: state.analytics.urgencyKeywordsDetected,
+        },
+      });
+      await recordMessage(storage, {
+        conversationId: state.sessionId,
+        direction: "tool",
+        timestamp: now,
+        toolName: "handoff_to_human",
+        toolCallSummary: `Escalating urgent request to a human.`,
+      });
+      await recordStageOnce(storage, state, "escalated", now, {
+        reason: "urgent",
+      });
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: withHumanHandoffContact(
+          personalizeReply(state, "that sounds urgent. pulling someone in now."),
+          config,
+        ),
+        stage: state.stage,
+        handoffRequired: true,
+      }, now);
+    }
+
+    if (!needsExplicitLastNameCollection(state.customer.lastName)) {
+      await recordStageOnce(storage, state, "contact_collected", now, {
+        firstName: state.customer.firstName,
+        lastName: state.customer.lastName,
+      });
+    }
+    state.stage = deriveStageFromState(state);
+    const nextReply = !state.customer.requestedService
+      ? "thanks. what’s going on with the electrical?"
+      : buildNextBookingPrompt(state);
     return persistReply(storage, state, {
       success: true,
       sessionId,
-      replyText: "thanks. what’s going on with the electrical?",
-      stage: "collect_service_type",
+      replyText: nextReply,
+      stage: state.stage,
     }, now);
   }
 
@@ -670,6 +835,15 @@ export async function handleChatMessage(
           stage: state.stage,
         }, now);
       }
+      if (needsExplicitLastNameCollection(state.customer.lastName)) {
+        state.stage = "collect_last_name";
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForLastName(state),
+          stage: state.stage,
+        }, now);
+      }
     } else {
       state.stage = "collect_address";
       return persistReply(storage, state, {
@@ -709,12 +883,21 @@ export async function handleChatMessage(
         stage: state.stage,
       }, now);
     }
+    if (needsExplicitLastNameCollection(state.customer.lastName)) {
+      state.stage = "collect_last_name";
+      return persistReply(storage, state, {
+        success: true,
+        sessionId,
+        replyText: askForLastName(state),
+        stage: state.stage,
+      }, now);
+    }
   }
 
   if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     if (state.stage === "collect_name") {
-      const accepted = tryAcceptFirstNameWithoutAsking(messageText);
-      if (!accepted) {
+      const parsed = tryAcceptContactName(messageText);
+      if (!parsed) {
         return persistReply(storage, state, {
           success: true,
           sessionId,
@@ -722,7 +905,21 @@ export async function handleChatMessage(
           stage: "collect_name",
         }, now);
       }
-      state.customer.firstName = accepted;
+      state.customer.firstName = parsed.firstName;
+      if (parsed.lastName?.trim()) {
+        state.customer.lastName = parsed.lastName.trim();
+      } else {
+        state.customer.lastName = undefined;
+      }
+      if (needsExplicitLastNameCollection(state.customer.lastName)) {
+        state.stage = "collect_last_name";
+        return persistReply(storage, state, {
+          success: true,
+          sessionId,
+          replyText: askForLastName(state),
+          stage: "collect_last_name",
+        }, now);
+      }
       if (!state.customer.phone) {
         state.stage = "collect_phone";
         return persistReply(storage, state, {
@@ -735,6 +932,7 @@ export async function handleChatMessage(
 
       await recordStageOnce(storage, state, "contact_collected", now, {
         firstName: state.customer.firstName,
+        lastName: state.customer.lastName,
       });
       state.stage = "collect_email";
       return persistReply(storage, state, {
@@ -1490,9 +1688,10 @@ function createOpenAiTools(
             city: state.customer.city,
           });
         }
-        if (applied.firstName || applied.phone || applied.email) {
+        if (applied.firstName || applied.lastName || applied.phone || applied.email) {
           await recordStageOnce(storage, state, "contact_collected", timestamp, {
             firstName: state.customer.firstName,
+            lastName: state.customer.lastName,
             phone: state.customer.phone,
             email: state.customer.email,
           });
@@ -1875,6 +2074,10 @@ function deriveStageFromState(state: ChatSessionState): ChatStage {
     return "collect_zip";
   }
 
+  if (needsExplicitLastNameCollection(state.customer.lastName)) {
+    return "collect_last_name";
+  }
+
   if (!state.customer.phone) {
     return "collect_phone";
   }
@@ -1898,6 +2101,9 @@ function listMissingFields(state: ChatSessionState): string[] {
   const missing: string[] = [];
   if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     missing.push("first_name");
+  }
+  if (needsExplicitLastNameCollection(state.customer.lastName)) {
+    missing.push("last_name");
   }
   if (!state.customer.requestedService) {
     missing.push("service_type");
@@ -1930,6 +2136,7 @@ function shouldSubmitLead(state: ChatSessionState): boolean {
     state.customer.address &&
     state.customer.zipCode &&
     !needsExplicitFirstNameCollection(state.customer.firstName) &&
+    !needsExplicitLastNameCollection(state.customer.lastName) &&
     state.customer.phone &&
     state.customer.email &&
     state.customer.preferredWindow &&
@@ -2241,7 +2448,11 @@ function askForZip(state: ChatSessionState): string {
 }
 
 function askForFirstName(state: ChatSessionState): string {
-  return "what’s your first name?";
+  return "what’s your first and last name?";
+}
+
+function askForLastName(state: ChatSessionState): string {
+  return personalizeReply(state, "and what’s your last name?");
 }
 
 function askForPhone(state: ChatSessionState): string {
@@ -2336,6 +2547,8 @@ function looksLikeStructuredReplyForCurrentStage(
     case "collect_zip":
       return Boolean(parseZipFromDedicatedMessage(text));
     case "collect_name":
+      return looksLikeNameInput(text);
+    case "collect_last_name":
       return looksLikeNameInput(text);
     case "collect_phone":
       return Boolean(extractPhoneNumber(text));
@@ -2465,6 +2678,9 @@ function buildNextBookingPrompt(state: ChatSessionState): string {
   }
   if (needsExplicitFirstNameCollection(state.customer.firstName)) {
     return askForFirstName(state);
+  }
+  if (needsExplicitLastNameCollection(state.customer.lastName)) {
+    return askForLastName(state);
   }
   if (!state.customer.phone) {
     return askForPhone(state);

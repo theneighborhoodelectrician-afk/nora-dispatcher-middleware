@@ -80,7 +80,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_name");
-    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(reply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
   });
 
   it("asks a natural follow-up when the customer only gives a vague request", async () => {
@@ -99,7 +99,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(reply.stage).toBe("collect_name");
-    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(reply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
   });
 
   it("asks for a first name when the opener is a job description (not a single name token)", async () => {
@@ -114,7 +114,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
     expect(reply.stage).toBe("collect_name");
-    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(reply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
   });
 
   it("still asks for a real first name when the channel prefills a junk placeholder", async () => {
@@ -132,7 +132,7 @@ describe("BookSmart chat flow", () => {
       config,
     );
     expect(reply.stage).toBe("collect_name");
-    expect(reply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(reply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
   });
 
   it("does not treat repeated greetings as the service description", async () => {
@@ -162,7 +162,7 @@ describe("BookSmart chat flow", () => {
 
     expect(firstReply.stage).toBe("collect_name");
     expect(secondReply.stage).toBe("collect_name");
-    expect(secondReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(secondReply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
   });
 
   it("does not treat repeated greetings as the city", async () => {
@@ -172,7 +172,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Pat",
+        text: "I'm Pat Lee",
         contact: {
           phone: "555-121-0002",
         },
@@ -209,7 +209,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Pat",
+        text: "I'm Pat Lee",
         contact: {
           phone: "555-111-3333",
         },
@@ -267,6 +267,7 @@ describe("BookSmart chat flow", () => {
     const lookupSpy = vi.spyOn(hcpIntegration, "lookupCustomerByPhone").mockResolvedValue({
       found: true,
       firstName: "Nate",
+      lastName: "Anderson",
       address: "53617 Oak Grove",
       city: "Shelby Charter Township",
       zipCode: "48315",
@@ -339,7 +340,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Sky",
+        text: "I'm Sky Blue",
         contact: {
           phone: "555-111-5656",
         },
@@ -369,7 +370,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Rae",
+        text: "I'm Rae Dawn",
         contact: {
           phone: "555-111-5757",
         },
@@ -410,7 +411,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Morgan",
+        text: "I'm Morgan Hill",
       },
       storage,
       config,
@@ -437,7 +438,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId,
-        text: "Chris",
+        text: "I'm Chris Lane",
         contact: {
           phone: "555-111-4444",
         },
@@ -475,7 +476,7 @@ describe("BookSmart chat flow", () => {
       storage,
       config,
     );
-    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
+    await handleChatMessage({ sessionId, text: "I'm Nate Reed" }, storage, config);
     await handleChatMessage({ sessionId, text: "I need a panel upgrade" }, storage, config);
     await handleChatMessage(
       { sessionId, text: "Oak Grove Dr, Shelby Charter Township" },
@@ -506,7 +507,7 @@ describe("BookSmart chat flow", () => {
     );
 
     expect(restartReply.stage).toBe("collect_name");
-    expect(restartReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(restartReply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
     expect(restartReply.replyText.toLowerCase()).not.toContain("i'll get it on the calendar asap");
   });
 
@@ -534,7 +535,7 @@ describe("BookSmart chat flow", () => {
       storage,
       aiConfig,
     );
-    await handleChatMessage({ sessionId, text: "Brad" }, storage, aiConfig);
+    await handleChatMessage({ sessionId, text: "I'm Brad Pitt" }, storage, aiConfig);
     await handleChatMessage({ sessionId, text: "flickering lights" }, storage, aiConfig);
     await handleChatMessage(
       { sessionId, text: "N Garfield Ave, Fraser" },
@@ -587,7 +588,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-slots",
-        text: "Jane",
+        text: "I'm Jane Doe",
       },
       storage,
       config,
@@ -694,6 +695,7 @@ describe("BookSmart chat flow", () => {
         address: "123 Main St",
         zipCode: "48313",
         firstName: "Jane",
+        lastName: "Doe",
         phone: "555-111-2222",
         email: "jane@example.com",
         preferredWindow: "morning",
@@ -767,7 +769,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-ai-answer-layer",
-        text: "Quinn",
+        text: "I'm Quinn Taylor",
         contact: {
           phone: "555-111-4545",
         },
@@ -807,7 +809,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-ai-city",
-        text: "Riley",
+        text: "I'm Riley Chen",
         contact: { phone: "555-000-0001" },
       },
       storage,
@@ -860,7 +862,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-invalid-address",
-        text: "Nate",
+        text: "I'm Nate Reed",
         contact: { phone: "555-000-1000" },
       },
       storage,
@@ -911,6 +913,7 @@ describe("BookSmart chat flow", () => {
       stage: "collect_job_notes",
       customer: {
         firstName: "Nate",
+        lastName: "Anderson",
         phone: "586-555-1212",
         email: "nate@example.com",
         address: "53617 Oak Grove",
@@ -1021,6 +1024,7 @@ describe("BookSmart chat flow", () => {
         address: "123 Main St",
         zipCode: "48313",
         firstName: "Jane",
+        lastName: "Doe",
         phone: "555-111-2222",
         email: "jane@example.com",
         preferredWindow: "morning",
@@ -1117,7 +1121,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-area",
-        text: "Alex",
+        text: "I'm Alex Kim",
       },
       storage,
       config,
@@ -1172,12 +1176,12 @@ describe("BookSmart chat flow", () => {
       config,
     );
 
-    expect(firstReply.replyText.toLowerCase()).toMatch(/first name|who am i speaking/);
+    expect(firstReply.replyText.toLowerCase()).toMatch(/first (?:name|and last)|who am i speaking|last name/i);
 
     const secondReply = await handleChatMessage(
       {
         sessionId: "booksmart-config-routing",
-        text: "Morgan",
+        text: "I'm Morgan Hill",
       },
       storage,
       config,
@@ -1217,7 +1221,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-book",
-        text: "Jane",
+        text: "I'm Jane Doe",
       },
       storage,
       config,
@@ -1292,6 +1296,7 @@ describe("BookSmart chat flow", () => {
         address: "123 Main St",
         zipCode: "48313",
         firstName: "Jane",
+        lastName: "Doe",
         phone: "555-111-2222",
         email: "jane@example.com",
         preferredWindow: "morning",
@@ -1321,6 +1326,7 @@ describe("BookSmart chat flow", () => {
         },
       ],
       lastOfferedAt: new Date("2026-04-06T15:00:00.000Z").getTime(),
+      techNotesCaptured: true,
       transcript: [],
       analytics: createInitialAnalytics(
         new Date("2026-04-06T16:00:00.000Z").getTime(),
@@ -1378,7 +1384,7 @@ describe("BookSmart chat flow", () => {
       {
         sessionId: "booksmart-analytics-book",
         messageId: "msg-2",
-        text: "Jane",
+        text: "I'm Jane Doe",
       },
       storage,
       config,
@@ -1488,7 +1494,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-email",
-        text: "Jane",
+        text: "I'm Jane Doe",
       },
       storage,
       config,
@@ -1539,7 +1545,7 @@ describe("BookSmart chat flow", () => {
     await handleChatMessage(
       {
         sessionId: "booksmart-chat-window",
-        text: "Nate",
+        text: "I'm Nate Reed",
       },
       storage,
       config,
@@ -1590,7 +1596,7 @@ describe("BookSmart chat flow", () => {
     const sessionId = "booksmart-tech-note";
 
     await handleChatMessage({ sessionId, text: "hello", contact: { phone: "555-777-1111" } }, storage, config);
-    await handleChatMessage({ sessionId, text: "Jamie" }, storage, config);
+    await handleChatMessage({ sessionId, text: "I'm Jamie Fox" }, storage, config);
     await handleChatMessage({ sessionId, text: "Need two outdoor outlets added" }, storage, config);
     await handleChatMessage({ sessionId, text: "123 Main St, Sterling Heights" }, storage, config);
     await handleChatMessage({ sessionId, text: "48313" }, storage, config);
@@ -1617,7 +1623,7 @@ describe("BookSmart chat flow", () => {
     const sessionId = "booksmart-related-work-follow-up";
 
     await handleChatMessage({ sessionId, text: "hello", contact: { phone: "555-888-1111" } }, storage, config);
-    await handleChatMessage({ sessionId, text: "Nate" }, storage, config);
+    await handleChatMessage({ sessionId, text: "I'm Nate Reed" }, storage, config);
     await handleChatMessage({ sessionId, text: "No grounds" }, storage, config);
     await handleChatMessage({ sessionId, text: "53617 Oak Grove" }, storage, config);
     await handleChatMessage({ sessionId, text: "48315" }, storage, config);

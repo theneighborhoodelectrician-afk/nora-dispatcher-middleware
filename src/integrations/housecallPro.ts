@@ -52,6 +52,7 @@ export async function lookupCustomerByPhone(
 ): Promise<{
   found: boolean;
   firstName?: string;
+  lastName?: string;
   address?: string;
   city?: string;
   zipCode?: string;
@@ -75,6 +76,7 @@ export async function lookupCustomerByPhone(
     const result = {
       found: true as const,
       firstName: customer.first_name,
+      lastName: customer.last_name,
       address: customer.address?.street,
       city: customer.address?.city,
       zipCode: customer.address?.zip,

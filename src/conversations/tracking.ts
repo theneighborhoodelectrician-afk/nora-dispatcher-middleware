@@ -246,6 +246,8 @@ function stageFromChatState(state: ChatSessionState): ConversationStage {
       return "address_collected";
     case "collect_name":
       return "started";
+    case "collect_last_name":
+      return "started";
     case "collect_phone":
     case "collect_email":
       return "contact_collected";

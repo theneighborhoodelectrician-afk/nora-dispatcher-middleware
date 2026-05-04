@@ -72,7 +72,7 @@ describe("chat webhook", () => {
       },
       {
         messageId: "blooio-msg-1b",
-        text: "Jane",
+        text: "I'm Jane Doe",
         contact: {
           id: "blooio-contact-1",
           phone: "586-555-0100",
@@ -212,7 +212,7 @@ describe("chat webhook", () => {
       }),
     });
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
-      text: expect.stringMatching(/first name|what’s going on/i),
+      text: expect.stringMatching(/first (?:name|and last)|what’s going on|last name/i),
       from_number: "+12488475527",
       use_typing_indicator: true,
     });
@@ -242,7 +242,7 @@ describe("chat webhook", () => {
     expect(res.statusCode).toBe(200);
     const payload = JSON.parse(res.body);
     expect(payload.sessionId).toBe("chat:5864891504:2488475527");
-    expect(payload.replyText).toMatch(/first name|what’s going on/i);
+    expect(payload.replyText).toMatch(/first (?:name|and last)|what’s going on|last name/i);
   });
 
   it("only performs HCP returning-customer lookup on the first native message in a session", async () => {

@@ -245,6 +245,11 @@ function looksLikeServiceDescriptionInner(text: string): boolean {
   return SERVICE_HINT_RE.test(text);
 }
 
+/** Exported for intake routing: true when the customer text looks like a job description, not just a name line. */
+export function messageLooksLikeServiceJob(text: string): boolean {
+  return looksLikeServiceDescriptionInner(text.trim());
+}
+
 function firstCandidateFromWords(text: string): string | undefined {
   const stripped = stripLeadingFriendlyNoise(text);
   const cleaned = stripped.replace(/[^a-zA-Z\s'-]/g, " ").trim();
@@ -323,20 +328,86 @@ export function needsExplicitFirstNameCollection(firstName: string | undefined):
   return !t || PLACEHOLDER_FIRST_NAMES.has(t);
 }
 
+/** True when we still need a last name for CRM / HCP. */
+export function needsExplicitLastNameCollection(lastName: string | undefined): boolean {
+  return !lastName?.trim();
+}
+
+const INVALID_INTRODUCED_LAST_TOKEN = new Set([
+  "in",
+  "at",
+  "from",
+  "here",
+  "the",
+  "a",
+  "an",
+  "on",
+  "of",
+  "to",
+  "for",
+  "and",
+  "or",
+  "near",
+]);
+
+function isPlausibleIntroducedNameToken(raw: string): boolean {
+  const lower = raw.toLowerCase();
+  if (lower.length < 2 || lower.length > 24) {
+    return false;
+  }
+  if (TOKEN_DENYLIST.has(lower) || SERVICE_CONTEXT_WORDS.has(lower) || PLACEHOLDER_FIRST_NAMES.has(lower)) {
+    return false;
+  }
+  if (INVALID_INTRODUCED_LAST_TOKEN.has(lower)) {
+    return false;
+  }
+  return true;
+}
+
 /**
- * Accept a first name without prompting only when the customer clearly gave it: introduction
- * patterns, or a single plausible token. Multi-word messages without an intro (typical job
- * descriptions) return undefined so the bot asks explicitly.
+ * First + last from clear intros ("Hi this is Janet Waters", "I'm Pat Smith") before single-name
+ * intro patterns (which would otherwise only capture the first token).
  */
-export function tryAcceptFirstNameWithoutAsking(message: string): string | undefined {
+export function tryParseIntroducedFirstLast(message: string): { firstName: string; lastName: string } | undefined {
+  const t = message.trim();
+  const patterns: RegExp[] = [
+    /\b(?:hi|hello)\s*[,!]?\s*(?:this\s+is|it'?s)\s+([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)\b/i,
+    /\bthis\s+is\s+([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)\b/i,
+    /\b(?:i'?m|i\s+am)\s+([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)\b/i,
+    /\b(?:my\s+name\s+is|my\s+name'?s)\s+([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)\b/i,
+    /\b(?:call\s+me)\s+([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)\b/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    const a = m?.[1];
+    const b = m?.[2];
+    if (a && b && isPlausibleIntroducedNameToken(a) && isPlausibleIntroducedNameToken(b)) {
+      return { firstName: capitalizeNameToken(a), lastName: capitalizeNameToken(b) };
+    }
+  }
+  return undefined;
+}
+
+export type AcceptedContactName = {
+  firstName: string;
+  lastName?: string;
+};
+
+/** Parsed first (and optional last) when the customer volunteered it clearly enough to skip asking. */
+export function tryAcceptContactName(message: string): AcceptedContactName | undefined {
   const trimmed = message.trim();
   if (!trimmed) {
     return undefined;
   }
 
-  const intro = extractIntroductionName(trimmed);
-  if (intro) {
-    return intro;
+  const pair = tryParseIntroducedFirstLast(trimmed);
+  if (pair) {
+    return pair;
+  }
+
+  const introSingle = extractIntroductionName(trimmed);
+  if (introSingle) {
+    return { firstName: introSingle };
   }
 
   const stripped = stripLeadingFriendlyNoise(trimmed);
@@ -358,7 +429,14 @@ export function tryAcceptFirstNameWithoutAsking(message: string): string | undef
     return undefined;
   }
 
-  return capitalizeNameToken(w);
+  return { firstName: capitalizeNameToken(w) };
+}
+
+/**
+ * Accept a first name only (backward compatible). Prefer tryAcceptContactName when you need last.
+ */
+export function tryAcceptFirstNameWithoutAsking(message: string): string | undefined {
+  return tryAcceptContactName(message)?.firstName;
 }
 
 /**
